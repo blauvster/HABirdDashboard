@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Audubon "singing bird clock".** `clock_style: analog` (or `both`) swaps
+  the wall clock's digital block for an analog dial with a bird
+  illustration at each hour position. Each hour's bird is chosen from that
+  hour's own detection history (BirdNET-Go hourly-by-species counts over
+  `clock_window_days`, default 30) by a max-weight one-to-one matching -
+  no bird lands on two hours, an hour with no data borrows the best bird
+  from its nearest neighbour, and the result is persisted with hysteresis
+  so it doesn't reshuffle on every recompute. `clock_hours: 24` opts into
+  distinct dawn/dusk birds; `hour_birds` pins a species to an hour;
+  `clock_seconds` adds a sweep hand. Tapping a rim bird plays its call and
+  honours `tap_action`.
+- **Hourly chimes.** With `clock_chime: true`, the dial plays that hour's
+  bird call on the hour from static files (`clock_call_base` +
+  `{scientific-slug}.mp3`, or `hour_call_overrides`) - no audio is fetched
+  from the API. Browser autoplay is unlocked by a one-tap overlay on the
+  dial; `clock_chime_output: media_player` casts to a real HA speaker and
+  sidesteps autoplay entirely. Quiet hours, volume, once-per-hour dedupe.
+- **Calendar.** `calendar: true` adds a month grid and/or agenda
+  (`calendar_view`) from your Home Assistant calendar entities
+  (`calendar_entities`), refreshed every 5 minutes via
+  `calendar.get_events`. Today is highlighted, days with events are
+  dotted, `calendar_week_start` picks Sunday/Monday, and the agenda labels
+  the next `agenda_max_events` within `agenda_days_ahead` as
+  Today/Tomorrow/weekday. Themed to the paper/ink palette, light and dark.
+- **Wall widgets pack as separate obstacles.** The collage now flows birds
+  around the clock, weather and calendar individually (and into the four
+  corners of the round dial's bounding box - an elliptical keep-out)
+  rather than around one combined block.
+- **Weather forecast.** The wall weather widget can now show a daily
+  forecast under the current conditions - a compact row of day columns
+  with a condition glyph, high/low, and precipitation (amount in your HA
+  units plus probability). New `forecast_days` option (card YAML + visual
+  editor; `wall.forecastDays` on the standalone page), default `0` = off.
+  Uses your Home Assistant weather entity via `weather.get_forecasts`
+  (both the card's own connection and the long-lived-token path);
+  BirdNET-Go's built-in weather has no multi-day forecast, so that source
+  stays current-conditions-only.
+
 ## v1.5.0 — 2026-09-02
 
 ### Added

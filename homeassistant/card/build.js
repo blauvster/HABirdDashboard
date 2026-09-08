@@ -210,7 +210,10 @@ app = app.replace(/\}\)\(\);\s*$/, '}\n');
 
 // Anything still touching `document.` must be on the whitelist.
 const leftover = [...app.matchAll(/document\.(\w+)/g)].map((m) => m[1]);
-const allowed = new Set(['createElement', 'fonts', 'hidden', 'cookie']);
+// createElement / createElementNS make detached nodes on the page document,
+// then get appended into the shadow root - document-scoping them would be
+// wrong, not right. (createElementNS: the analog clock dial's SVG face.)
+const allowed = new Set(['createElement', 'createElementNS', 'fonts', 'hidden', 'cookie']);
 const bad = leftover.filter((name) => !allowed.has(name));
 if (bad.length) throw new Error('unscoped document usage: ' + [...new Set(bad)].join(', '));
 
@@ -282,6 +285,7 @@ var HABIRD_EDITOR_SCHEMA = [
       ] } } },
       { name: 'weather', selector: { boolean: {} } },
       { name: 'weather_entity', selector: { entity: { domain: 'weather' } } },
+      { name: 'forecast_days', selector: { number: { min: 0, max: 7, step: 1, mode: 'box', unit_of_measurement: 'days' } } },
     ] },
     { name: 'hide_cursor', selector: { boolean: {} } },
     { name: 'collage_fill', selector: { number: { min: 0.1, max: 1, step: 0.05, mode: 'slider' } } },
@@ -313,6 +317,56 @@ var HABIRD_EDITOR_SCHEMA = [
     { name: 'audio_boost', selector: { number: { min: 0, max: 48, step: 6, mode: 'slider', unit_of_measurement: 'dB' } } },
     { name: 'image_base', selector: { text: {} } },
   ] },
+  { name: 'audubon', type: 'expandable', flatten: true, title: 'Audubon clock', schema: [
+    { name: 'clock_style', selector: { select: { mode: 'dropdown', options: [
+      { value: 'digital', label: 'Digital (default)' },
+      { value: 'analog', label: 'Analog dial only' },
+      { value: 'both', label: 'Analog dial + digital line' },
+    ] } } },
+    { name: '', type: 'grid', schema: [
+      { name: 'clock_birds', selector: { boolean: {} } },
+      { name: 'clock_seconds', selector: { boolean: {} } },
+      { name: 'clock_hours', selector: { select: { mode: 'dropdown', options: [
+        { value: '12', label: '12 (fold AM+PM)' },
+        { value: '24', label: '24 (distinct hours)' },
+      ] } } },
+      { name: 'clock_reassign', selector: { select: { mode: 'dropdown', options: [
+        { value: 'daily', label: 'Daily' },
+        { value: 'hourly', label: 'Hourly' },
+        { value: 'manual', label: 'Manual (on reload)' },
+      ] } } },
+      { name: 'clock_window_days', selector: { number: { min: 1, max: 365, step: 1, mode: 'box', unit_of_measurement: 'days' } } },
+      { name: 'clock_min_confidence', selector: { number: { min: 0, max: 1, step: 0.05, mode: 'slider' } } },
+    ] },
+    { name: 'clock_chime', selector: { boolean: {} } },
+    { name: '', type: 'grid', schema: [
+      { name: 'clock_chime_output', selector: { select: { mode: 'dropdown', options: [
+        { value: 'browser', label: 'Browser (tap to unlock)' },
+        { value: 'media_player', label: 'HA media player' },
+      ] } } },
+      { name: 'clock_chime_media_player', selector: { entity: { domain: 'media_player' } } },
+      { name: 'clock_chime_quiet_hours', selector: { text: {} } },
+      { name: 'clock_chime_volume', selector: { number: { min: 0, max: 1, step: 0.05, mode: 'slider' } } },
+    ] },
+    { name: 'clock_call_base', selector: { text: {} } },
+  ] },
+  { name: 'calendar_group', type: 'expandable', flatten: true, title: 'Calendar', schema: [
+    { name: 'calendar', selector: { boolean: {} } },
+    { name: 'calendar_entities', selector: { entity: { multiple: true, filter: [{ domain: 'calendar' }] } } },
+    { name: '', type: 'grid', schema: [
+      { name: 'calendar_view', selector: { select: { mode: 'dropdown', options: [
+        { value: 'both', label: 'Month + agenda' },
+        { value: 'month', label: 'Month grid' },
+        { value: 'agenda', label: 'Agenda' },
+      ] } } },
+      { name: 'calendar_week_start', selector: { select: { mode: 'dropdown', options: [
+        { value: 'sunday', label: 'Sunday' },
+        { value: 'monday', label: 'Monday' },
+      ] } } },
+      { name: 'agenda_days_ahead', selector: { number: { min: 1, max: 60, step: 1, mode: 'box', unit_of_measurement: 'days' } } },
+      { name: 'agenda_max_events', selector: { number: { min: 1, max: 20, step: 1, mode: 'box' } } },
+    ] },
+  ] },
   { name: 'connection', type: 'expandable', flatten: true, title: 'Connection & data', schema: [
     { name: 'data_source', selector: { select: { mode: 'dropdown', options: [
       { value: 'auto', label: 'Automatic' },
@@ -342,6 +396,7 @@ var HABIRD_LABELS = {
   clock: 'Clock',
   weather: 'Weather',
   weather_entity: 'Weather entity',
+  forecast_days: 'Forecast days',
   corner: 'Corner',
   hide_cursor: 'Hide idle cursor',
   sit_confidence: 'Sit confidence',
@@ -366,6 +421,25 @@ var HABIRD_LABELS = {
   poll_seconds: 'Refresh interval',
   live: 'Live updates',
   visits_sensors: 'Feeder visit sensors',
+  clock_style: 'Clock style',
+  clock_birds: 'Hour birds',
+  clock_seconds: 'Second hand',
+  clock_hours: 'Hour positions',
+  clock_reassign: 'Reassign birds',
+  clock_window_days: 'Assignment window',
+  clock_min_confidence: 'Min confidence',
+  clock_chime: 'Hourly chime',
+  clock_chime_output: 'Chime output',
+  clock_chime_media_player: 'Chime speaker',
+  clock_chime_quiet_hours: 'Quiet hours',
+  clock_chime_volume: 'Chime volume',
+  clock_call_base: 'Call file base URL',
+  calendar: 'Calendar',
+  calendar_entities: 'Calendar entities',
+  calendar_view: 'Calendar view',
+  calendar_week_start: 'Week starts',
+  agenda_days_ahead: 'Agenda days ahead',
+  agenda_max_events: 'Agenda max events',
 };
 var HABIRD_HELPERS = {
   title: 'Default (blank): no heading. Any text adds a title the birds pack around, clock-style.',
@@ -374,6 +448,7 @@ var HABIRD_HELPERS = {
   view_selector: 'Turn off to lock this card to one view.',
   selector_position: 'Top pairs poorly with a title - both sit centred up top.',
   weather_entity: 'Default (blank): the first weather.* entity found.',
+  forecast_days: 'Days of daily forecast (high/low + precipitation) shown under the current conditions. 0 hides it. Uses your HA weather entity in your HA units.',
   hide_cursor: 'For wall displays: pointer disappears after 8 s idle.',
   sit_confidence: 'Birds perch at or above this detection confidence and fly below it. 0 = always perched, 1.01 = always flying.',
   audio_boost: "Detection clips are quiet; this boosts playback up to +48 dB (0 dB = off), compressed to curb clipping. Faint clips get much louder; the loudest can distort a little near the top - ease off if so.",
@@ -397,6 +472,18 @@ var HABIRD_HELPERS = {
   poll_seconds: 'Safety-net refresh. MQTT pushes new detections instantly.',
   live: "Opens a live connection to BirdNET-Go's own detection stream (in addition to the MQTT push above) so new calls refresh the card within a couple seconds. Falls back to the interval above alone if the stream is unavailable (older BirdNET-Go, or Private Mode).",
   visits_sensors: "Optional: a feeder camera's BirdNET-style “... scientific name” sensors (e.g. published by an LLM Vision automation). Their sightings blend in as per-species “visits” next to the audio “calls” - on hover, in the atlas and in the detail view.",
+  clock_style: 'Analog swaps the digital block for an Audubon "singing bird clock" dial - a bird illustration at each hour, drawn from that hour’s detections. Both keeps the digital line under it.',
+  clock_birds: 'Show an illustration at each hour position (analog styles only).',
+  clock_hours: '12 folds each hour together with the one 12 h away (a robin at 7am and 7pm share a slot). 24 gives distinct dawn and dusk birds - needs a richer species pool.',
+  clock_reassign: 'How often the hour->bird assignment is recomputed. The result is persisted and only re-shuffles when a challenger clearly beats the incumbent.',
+  clock_window_days: 'How many days of detection history the hour assignment is built from (default 30).',
+  clock_min_confidence: 'Ignore detections below this confidence when building the hour assignment. 0 keeps them all.',
+  clock_chime: 'On the hour, play that hour’s bird call (needs an analog style). Browsers block autoplay until you tap the dial once; "HA media player" output avoids that.',
+  clock_chime_output: 'Browser plays through this page (one tap to unlock audio). HA media player casts the call to a real speaker and sidesteps autoplay entirely.',
+  clock_chime_quiet_hours: 'e.g. 22:00-07:00 - no chimes during this range (wraps past midnight).',
+  clock_call_base: 'Where the {scientific-name-slug}.mp3 call files live. Default /local/birdcalls/ (drop files in HA’s config/www/birdcalls/). No audio is fetched from the API.',
+  calendar: 'A month grid and/or agenda from your HA calendar entities, refreshed every 5 min. Needs the card’s HA connection.',
+  calendar_entities: 'Which calendar.* entities to show. Events from all of them are merged.',
 };
 
 class HABirdCard extends HTMLElement {
@@ -413,6 +500,10 @@ class HABirdCard extends HTMLElement {
     }
     if (config.names_size != null && !(+config.names_size > 0)) {
       throw new Error('names_size must be a positive number of pixels');
+    }
+    if (config.forecast_days != null &&
+        (!(Number(config.forecast_days) >= 0) || Number(config.forecast_days) > 10)) {
+      throw new Error('forecast_days must be a number from 0 to 10');
     }
     if (config.sit_confidence != null &&
         (typeof config.sit_confidence !== 'number' || config.sit_confidence < 0 || config.sit_confidence > 1.01)) {
@@ -561,7 +652,32 @@ class HABirdCard extends HTMLElement {
         corner: c.corner || 'bottom-right',
         hideCursor: !!c.hide_cursor,
         weatherEntity: c.weather_entity || '',
+        forecastDays: (c.forecast_days == null ? 0 : +c.forecast_days),
         fahrenheit: !!c.fahrenheit,   // BirdNET-Go fallback only; hass uses HA units
+        // Audubon analog clock
+        clockStyle: c.clock_style || 'digital',
+        clockBirds: c.clock_birds !== false,
+        clockHours: (+c.clock_hours === 24) ? 24 : 12,
+        clockSeconds: !!c.clock_seconds,
+        clockWindowDays: (c.clock_window_days == null ? 30 : +c.clock_window_days),
+        clockReassign: c.clock_reassign || 'daily',
+        clockMinConfidence: (c.clock_min_confidence == null ? 0 : +c.clock_min_confidence),
+        hourBirds: c.hour_birds || {},
+        // Chimes
+        clockChime: !!c.clock_chime,
+        clockChimeQuietHours: c.clock_chime_quiet_hours || '',
+        clockChimeVolume: (c.clock_chime_volume == null ? 0.7 : +c.clock_chime_volume),
+        clockChimeOutput: c.clock_chime_output || 'browser',
+        clockChimeMediaPlayer: c.clock_chime_media_player || '',
+        clockCallBase: c.clock_call_base || '/local/birdcalls/',
+        hourCallOverrides: c.hour_call_overrides || {},
+        // Calendar
+        calendar: !!c.calendar,
+        calendarEntities: c.calendar_entities || [],
+        calendarView: c.calendar_view || 'both',
+        calendarWeekStart: c.calendar_week_start || 'sunday',
+        agendaDaysAhead: (c.agenda_days_ahead == null ? 7 : +c.agenda_days_ahead),
+        agendaMaxEvents: (c.agenda_max_events == null ? 6 : +c.agenda_max_events),
       },
       __getHass: function () { return self._hass; },
     };

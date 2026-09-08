@@ -82,7 +82,7 @@ let done = 0;
       }
       assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
       console.log('A: obstacle packing + BG weather OK (tiles all left of the clock zone)');
-      if (++done === 2) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
     } catch (e) { console.error('A FAIL:', e.message); process.exit(1); }
   }, 1600);
 }
@@ -127,7 +127,207 @@ let done = 0;
       assert.strictEqual(doc.getElementById('wallWidgets').getAttribute('data-corner'), 'bottom-right', 'default corner');
       assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
       console.log('B: HA weather via token OK (auto-discovery, units, sun.sun)');
-      if (++done === 2) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
     } catch (e) { console.error('B FAIL:', e.message); process.exit(1); }
+  }, 1600);
+}
+
+// --- Scenario C: daily forecast (forecastDays + weather.get_forecasts) ---
+{
+  let sawForecastCall = false;
+  const fc = [
+    { datetime: '2026-06-11T00:00:00', condition: 'sunny', temperature: 24.1, templow: 12.6, precipitation: 0, precipitation_probability: 5 },
+    { datetime: '2026-06-12T00:00:00', condition: 'rainy', temperature: 19.4, templow: 11.0, precipitation: 3.2, precipitation_probability: 60 },
+    { datetime: '2026-06-13T00:00:00', condition: 'partlycloudy', temperature: 21.0, templow: 10.2, precipitation: 0.4, precipitation_probability: 20 },
+    { datetime: '2026-06-14T00:00:00', condition: 'cloudy', temperature: 20.0, templow: 9.9, precipitation: 0, precipitation_probability: 10 },
+  ];
+  const { window, errors } = boot({
+    search: '',
+    config: { birdnetGoUrl: '', sitConfidence: 0.96,
+      wall: { weather: true, haToken: 'T', forecastDays: 3 } },
+    onFetch: () => (url, opts) => {
+      const u = String(url);
+      const p = u.replace('http://ha.local:8080', '');
+      if (u.startsWith('/api/') || u.includes('ha.local:8123/api/')) {
+        const ap = u.slice(u.indexOf('/api/') + 4);
+        if (ap.startsWith('/services/weather/get_forecasts')) {
+          sawForecastCall = true;
+          const body = JSON.parse((opts && opts.body) || '{}');
+          assert.strictEqual(body.type, 'daily', 'asks for the daily forecast');
+          return ok({ changed_states: [], service_response: { 'weather.forecast_home': { forecast: fc } } });
+        }
+        if (ap === '/states') return ok([{ entity_id: 'weather.forecast_home', state: 'sunny' }]);
+        if (ap === '/states/weather.forecast_home') return ok({
+          state: 'sunny',
+          attributes: { temperature: 22, precipitation_unit: 'mm' },
+        });
+        if (ap === '/states/sun.sun') return ok({ attributes: {} });
+        return nf();
+      }
+      return bgData(p) || nf();
+    },
+  });
+  setTimeout(() => {
+    const doc = window.document;
+    try {
+      assert.ok(sawForecastCall, 'called weather.get_forecasts');
+      const strip = doc.getElementById('wwForecast');
+      assert.ok(!strip.hidden, 'forecast strip visible');
+      const cols = [...strip.querySelectorAll('.ww-fc-day')];
+      assert.strictEqual(cols.length, 3, 'forecastDays:3 -> 3 columns, got ' + cols.length);
+      assert.ok(/24°/.test(cols[0].textContent), 'day 1 high shown: ' + cols[0].textContent);
+      assert.ok(/13°/.test(cols[0].textContent), 'day 1 low shown (rounded): ' + cols[0].textContent);
+      assert.ok(/3\.2mm/.test(cols[1].textContent) && /60%/.test(cols[1].textContent), 'day 2 precip amount + chance: ' + cols[1].textContent);
+      assert.ok(!/mm/.test(cols[0].textContent) && !/%/.test(cols[0].textContent), 'dry day 1 has no precip text: ' + cols[0].textContent);
+      assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
+      console.log('C: daily forecast OK (get_forecasts, column count, high/low, precip)');
+      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+    } catch (e) { console.error('C FAIL:', e.message); process.exit(1); }
+  }, 1600);
+}
+
+// --- Scenario D: Audubon analog dial (clock_style: analog) ---
+{
+  // Two species with distinct morning vs afternoon hourly_counts so the
+  // assignment has something to chew on.
+  const morningBird = { scientific_name: 'Turdus migratorius', common_name: 'American Robin',
+    count: 300, max_confidence: 0.95, latest_heard: '07:30:00',
+    hourly_counts: [0,0,0,0,0,0,9,9,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0] };
+  const duskBird = { scientific_name: 'Strix varia', common_name: 'Barred Owl',
+    count: 120, max_confidence: 0.9, latest_heard: '19:40:00',
+    hourly_counts: [1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,6,7,3,0,0,1] };
+  const clockDaily = [morningBird, duskBird];
+  const { window, errors } = boot({
+    search: '',
+    config: { birdnetGoUrl: '', sitConfidence: 0.96,
+      wall: { clock: true, clockStyle: 'analog', clockHours: 12, clockSeconds: true } },
+    onFetch: () => (url) => {
+      const p = String(url).replace('http://ha.local:8080', '');
+      if (p.startsWith('/api/v2/analytics/species/daily')) return ok(clockDaily);
+      return bgData(p) || nf();
+    },
+  });
+  setTimeout(() => {
+    const doc = window.document;
+    try {
+      const clock = doc.getElementById('wwClock');
+      assert.ok(clock.classList.contains('ww-analog'), '#wwClock marked ww-analog');
+      assert.ok(clock.classList.contains('ww-digital-hidden'), 'analog style hides the digital line');
+      const dial = doc.getElementById('wwDial');
+      assert.ok(!dial.hidden, 'dial visible');
+      const face = doc.getElementById('wwDialFace');
+      assert.ok(face.querySelector('.ww-hand-h') && face.querySelector('.ww-hand-m'), 'hour + minute hands drawn');
+      assert.ok(face.querySelector('.ww-hand-s'), 'second hand drawn (clockSeconds)');
+      assert.strictEqual(face.querySelectorAll('.ww-dial-tick').length, 12, '12 hour ticks');
+      // Hands carry a rotate() transform from the tick loop.
+      assert.ok(/rotate\(/.test(face.querySelector('.ww-hand-h').style.transform || ''), 'hour hand rotated');
+      const birds = doc.getElementById('wwDialBirds').querySelectorAll('img.ww-dial-bird');
+      assert.ok(birds.length >= 1, 'rim birds rendered: ' + birds.length);
+      // The morning bird should own a morning position (hour 6/7 -> pos 6/7),
+      // the owl an evening one (hour 18/19 -> pos 6/7 folds... use 24h check
+      // separately). Here just assert both assigned species appear.
+      const scis = [...birds].map((b) => b.getAttribute('data-sci'));
+      assert.ok(scis.includes('Turdus migratorius'), 'robin on the dial');
+      assert.ok(scis.includes('Strix varia'), 'owl on the dial');
+      // Persisted for hysteresis on the next recompute.
+      let saved = null;
+      try { saved = JSON.parse(window.localStorage.getItem('bird:clockAssign')); } catch (e) {}
+      assert.ok(saved && saved.positions === 12 && saved.byPos, 'assignment persisted to localStorage');
+      assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
+      console.log('D: analog dial OK (face, hands, ticks, rim birds, persistence)');
+      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+    } catch (e) { console.error('D FAIL:', e.message); process.exit(1); }
+  }, 1600);
+}
+
+// --- Scenario E: calendar (month grid + agenda via calendar.get_events) ---
+{
+  const pad = (n) => String(n).padStart(2, '0');
+  const d0 = new Date();
+  const todayStr = d0.getFullYear() + '-' + pad(d0.getMonth() + 1) + '-' + pad(d0.getDate());
+  const tmr = new Date(d0.getTime() + 86400000);
+  const tmrStr = tmr.getFullYear() + '-' + pad(tmr.getMonth() + 1) + '-' + pad(tmr.getDate());
+  const tmrTimed = tmrStr + 'T09:30:00';
+  const events = [
+    { start: todayStr, end: tmrStr, summary: 'Recycling day' },                // all-day today (exclusive end)
+    { start: tmrTimed, end: tmrStr + 'T10:30:00', summary: 'Dentist' },        // timed tomorrow
+  ];
+  let sawGetEvents = false;
+  const { window, errors } = boot({
+    search: '',
+    config: { birdnetGoUrl: '', sitConfidence: 0.96,
+      wall: { calendar: true, calendarEntities: ['calendar.test'], calendarView: 'both', haToken: 'T' } },
+    onFetch: () => (url, opts) => {
+      const u = String(url);
+      if (u.includes('/api/services/calendar/get_events')) {
+        sawGetEvents = true;
+        assert.ok(/return_response/.test(u), 'uses the return_response path');
+        const body = JSON.parse((opts && opts.body) || '{}');
+        assert.deepStrictEqual(body.entity_id, ['calendar.test'], 'passes the configured entity');
+        return ok({ service_response: { 'calendar.test': { events } } });
+      }
+      const p = u.replace('http://ha.local:8080', '');
+      return bgData(p) || nf();
+    },
+  });
+  setTimeout(() => {
+    const doc = window.document;
+    try {
+      assert.ok(sawGetEvents, 'called calendar.get_events');
+      const cal = doc.getElementById('wwCalendar');
+      assert.ok(!cal.hidden, 'calendar visible');
+      const today = cal.querySelector('.ww-cal-grid td.is-today');
+      assert.ok(today, 'today highlighted in the month grid');
+      assert.ok(today.classList.contains('has-ev'), "today's recycling event dotted");
+      const agenda = [...cal.querySelectorAll('.ww-cal-agenda li')];
+      assert.ok(agenda.length >= 2, 'agenda lists both events: ' + agenda.length);
+      assert.ok(/Today/i.test(agenda[0].textContent) && /Recycling/.test(agenda[0].textContent), 'all-day today first: ' + agenda[0].textContent);
+      assert.ok(/Tomorrow/i.test(agenda[1].textContent) && /Dentist/.test(agenda[1].textContent), 'timed tomorrow second: ' + agenda[1].textContent);
+      assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
+      console.log('E: calendar OK (get_events, month grid, today dot, agenda labels)');
+      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+    } catch (e) { console.error('E FAIL:', e.message); process.exit(1); }
+  }, 1600);
+}
+
+// --- Scenario F: chime autoplay-unlock overlay ---
+{
+  const browserChime = boot({
+    search: '',
+    config: { birdnetGoUrl: '', sitConfidence: 0.96,
+      wall: { clock: true, clockStyle: 'analog', clockChime: true, clockChimeOutput: 'browser' } },
+    onFetch: () => (url) => {
+      const p = String(url).replace('http://ha.local:8080', '');
+      if (p.startsWith('/api/v2/analytics/species/daily')) return ok(daily);
+      return bgData(p) || nf();
+    },
+  });
+  const mpChime = boot({
+    search: '',
+    config: { birdnetGoUrl: '', sitConfidence: 0.96,
+      wall: { clock: true, clockStyle: 'analog', clockChime: true,
+        clockChimeOutput: 'media_player', clockChimeMediaPlayer: 'media_player.den' } },
+    onFetch: () => (url) => {
+      const p = String(url).replace('http://ha.local:8080', '');
+      if (p.startsWith('/api/v2/analytics/species/daily')) return ok(daily);
+      return bgData(p) || nf();
+    },
+  });
+  setTimeout(() => {
+    try {
+      const bDoc = browserChime.window.document;
+      const overlay = bDoc.getElementById('wwChimeUnlock');
+      assert.ok(!overlay.hidden, 'browser chimes: unlock overlay shown until a gesture');
+      overlay.dispatchEvent(new browserChime.window.MouseEvent('click', { bubbles: true }));
+      assert.ok(overlay.hidden, 'overlay hides once tapped (audio unlocked)');
+      assert.deepStrictEqual(browserChime.errors, [], 'browser errors: ' + browserChime.errors.join('; '));
+
+      const mDoc = mpChime.window.document;
+      assert.ok(mDoc.getElementById('wwChimeUnlock').hidden, 'media_player output: no unlock overlay');
+      assert.deepStrictEqual(mpChime.errors, [], 'mp errors: ' + mpChime.errors.join('; '));
+
+      console.log('F: chime unlock overlay OK (shown for browser, tapped-away, absent for media_player)');
+      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+    } catch (e) { console.error('F FAIL:', e.message); process.exit(1); }
   }, 1600);
 }

@@ -261,9 +261,31 @@ xeno_canto_key: ""           # free key from xeno-canto.org/account; enables the
                              #   reference-call feature below (empty = off)
 audio_boost: 24              # recording playback boost in dB, 0-48 (0 = off) - for quiet mics
 clock: true                  # time + date in a corner of the collage
+clock_style: digital         # digital (default) | analog (Audubon bird-clock
+                             #   dial) | both
+clock_birds: true            # analog: a bird illustration at each hour
+clock_hours: 12              # 12 (fold AM+PM) | 24 (distinct dawn/dusk birds)
+clock_seconds: false         # analog: show a sweeping second hand
+clock_window_days: 30        # history the hour->bird assignment is built on
+clock_reassign: daily        # daily | hourly | manual recompute cadence
+hour_birds: {}               # pin a species to an hour, e.g. { 7: Turdus migratorius }
+clock_chime: false           # analog: play that hour's call on the hour
+clock_chime_output: browser  # browser (tap dial to unlock) | media_player
+clock_chime_media_player: "" # media_player.* entity for media_player output
+clock_chime_quiet_hours: ""  # e.g. "22:00-07:00"
+clock_chime_volume: 0.7      # 0-1, browser output
+clock_call_base: /local/birdcalls/   # {scientific-slug}.mp3 lives here
 weather: true                # conditions + sunrise/sunset from HA
 weather_entity: ""           # empty = first weather.* entity found
-corner: bottom-right         # where the clock/weather block lives
+forecast_days: 0             # 0 = off; N = N-day daily forecast (high/low +
+                             #   precip) under the current conditions
+calendar: false              # month grid / agenda from HA calendar entities
+calendar_entities: []        # e.g. [calendar.family, calendar.holidays]
+calendar_view: both          # month | agenda | both
+calendar_week_start: sunday  # sunday | monday
+agenda_days_ahead: 7         # agenda horizon
+agenda_max_events: 6         # agenda length
+corner: bottom-right         # where the clock/weather/calendar block lives
 hide_cursor: false           # hide the pointer after 8s idle (wall displays)
 image_base: ""               # empty = artwork from CDN (see below)
 visits_sensors: []           # feeder-camera sensors - blends per-species
@@ -302,6 +324,47 @@ finite, so one pass of the art pipeline closes every gap for good.
 the card's own connection - no access token, in your HA units, with
 sunrise/sunset from HA's `sun.sun`. If HA has no weather entity, the card
 quietly falls back to BirdNET-Go's built-in weather (yr.no).
+
+Set **`forecast_days`** (default `0`, off) to add a daily forecast beneath
+the current conditions - one column per day with a condition glyph, that
+day's high/low, and precipitation (amount in your HA units, plus chance of
+rain). It's pulled from your HA weather entity via `weather.get_forecasts`,
+so it needs the HA source (the card's own connection or `wall.haToken`) -
+BirdNET-Go's built-in weather has no multi-day forecast.
+
+**Audubon bird clock** (`clock_style: analog`): the digital block becomes
+an analog dial with a bird illustration at each hour. Each hour's bird is
+the one most *characteristic* of that hour in your own detection history -
+not just the loudest bird overall - solved as a one-to-one matching so no
+species lands on two hours; an hour with no detections borrows the best
+bird from its nearest neighbour (shown dimmed). The assignment is computed
+over `clock_window_days` (default 30), recomputed on the `clock_reassign`
+cadence, and persisted with hysteresis so it only reshuffles when a
+challenger clearly beats the incumbent. `clock_hours: 24` gives distinct
+dawn and dusk birds; `hour_birds: { 7: Turdus migratorius }` pins one.
+Tapping a rim bird plays its call and follows `tap_action`.
+
+With **`clock_chime: true`** the dial plays that hour's call on the hour,
+from static files you drop in `config/www/birdcalls/` (named by scientific
+slug, e.g. `turdus-migratorius.mp3`; override per hour with
+`hour_call_overrides`). Nothing is fetched from the API. Browsers block
+autoplay until a gesture, so the dial shows a one-tap "enable chimes"
+overlay on a kiosk; `clock_chime_output: media_player` casts the call to a
+real HA speaker and avoids autoplay entirely. For an untouched kiosk, launch
+Chromium with `--autoplay-policy=no-user-gesture-required`.
+
+**Calendar** (`calendar: true`): a month grid and/or agenda
+(`calendar_view`) built from your HA calendar entities
+(`calendar_entities`), refreshed every 5 minutes. Today is highlighted,
+days with events are dotted, and the agenda lists the next few events as
+"Today / Tomorrow / Wed". Needs the card's HA connection (or `wall.haToken`
+on the standalone page). The clock, weather, forecast and month grid can
+crowd a small sidebar card - it's designed for a panel / full-screen view;
+at sidebar size, drop the calendar or use `calendar_view: agenda`.
+
+Per-hour bird pins and call overrides are **YAML-only** for now - the
+visual editor has the clock/chime/calendar toggles but not a live
+species-pool picker per hour.
 
 **Bird details open in place**: clicking any bird - in the collage, the
 stats lists, or the atlas - pops its detail card (recordings, description,

@@ -620,6 +620,141 @@
     });
   }
 
+  // ---- Audubon clock: species x hour-of-day count matrix ----
+  // Feeds assignHours(). Aggregated over a `windowDays` window, keyed by
+  // scientific name, 24 buckets of hour-of-day. Three sources, following the
+  // adapter's usual api|ha routing:
+  //   1. BirdNET-Go analytics/time/hourly/batch  (one request for the pool)
+  //   2. BirdNET-Go analytics/species/daily      (per-day, summed - always works)
+  //   3. HA recorder history of the MQTT sensors (dataSource 'ha' / API down;
+  //      bounded by historyDays / recorder retention)
+  // The batch endpoint's response shape has drifted across BirdNET-Go builds,
+  // so _hourlyBatchParse() accepts every plausible layout and returns null
+  // (-> fall through to the daily-summary sum) when it recognises none.
+
+  function _hourly24(v) {
+    var out = new Array(24).fill(0), h;
+    if (Array.isArray(v)) {
+      if (v.length && typeof v[0] === 'object') {
+        v.forEach(function (r) {
+          var hr = +(r.hour != null ? r.hour : r.h);
+          if (hr >= 0 && hr < 24) out[hr] += +(r.count != null ? r.count : r.value) || 0;
+        });
+      } else {
+        for (h = 0; h < 24 && h < v.length; h++) out[h] = +v[h] || 0;
+      }
+    } else if (v && typeof v === 'object') {
+      for (h = 0; h < 24; h++) out[h] = +v[h] || +v[String(h)] || 0;
+    }
+    return out;
+  }
+
+  function _hourlyBatchParse(j) {
+    if (!j) return null;
+    var body = (j.data != null) ? j.data : j;
+    var matrix = {};
+    if (Array.isArray(body)) {
+      body.forEach(function (row) {
+        var sci = row && (row.scientific_name || row.species || row.sci || row.name);
+        if (!sci) return;
+        matrix[sci] = _hourly24(row.hourly || row.hourly_counts || row.counts ||
+          row.distribution || row.data);
+      });
+    } else if (body && typeof body === 'object') {
+      Object.keys(body).forEach(function (sci) { matrix[sci] = _hourly24(body[sci]); });
+    }
+    var keys = Object.keys(matrix);
+    if (!keys.length) return null;
+    var any = keys.some(function (k) { return matrix[k].some(function (n) { return n > 0; }); });
+    return any ? matrix : null;
+  }
+
+  function _datesBetween(startStr, endStr) {
+    var out = [], p = startStr.split('-'), q = endStr.split('-');
+    var d = new Date(+p[0], +p[1] - 1, +p[2]);
+    var end = new Date(+q[0], +q[1] - 1, +q[2]);
+    for (var guard = 0; d <= end && guard < 400; guard++) {
+      out.push(bgDateStr(d));
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
+  }
+
+  function bgHourlyMatrixFromDaily(startStr, endStr) {
+    var days = _datesBetween(startStr, endStr);
+    var today = bgDateStr(new Date());
+    return Promise.all(days.map(function (d) {
+      return bgMemoJson('/analytics/species/daily?date=' + d, d === today ? 60000 : 6 * 3600000)
+        .then(function (rows) { return rows || []; }, function () { return null; });
+    })).then(function (perDay) {
+      if (perDay.every(function (r) { return r === null; })) {
+        return Promise.reject('daily summary unreachable');
+      }
+      var matrix = {};
+      perDay.forEach(function (rows) {
+        (rows || []).forEach(function (r) {
+          var sci = r.scientific_name;
+          if (!sci) return;
+          var mrow = matrix[sci] || (matrix[sci] = new Array(24).fill(0));
+          var hc = r.hourly_counts || [];
+          for (var h = 0; h < 24; h++) mrow[h] += +hc[h] || 0;
+        });
+      });
+      return matrix;
+    });
+  }
+
+  function bgHourlyMatrix(pool, startStr, endStr, minConf) {
+    var qs = '?start_date=' + startStr + '&end_date=' + endStr;
+    if (minConf) qs += '&min_confidence=' + minConf;
+    (pool || []).forEach(function (s) { qs += '&species=' + encodeURIComponent(s); });
+    return bgJson('/analytics/time/hourly/batch' + qs).then(function (j) {
+      var m = _hourlyBatchParse(j);
+      if (m) return m;
+      throw new Error('unrecognised batch shape');
+    }).catch(function () {
+      return bgHourlyMatrixFromDaily(startStr, endStr);
+    });
+  }
+
+  function hhHourlyMatrix(startMs, minConf) {
+    return hhEvents('long').then(function (ev) {
+      var matrix = {};
+      ev.forEach(function (e) {
+        if (e.t < startMs) return;
+        if (minConf && e.conf && e.conf < minConf) return;
+        var mrow = matrix[e.sci] || (matrix[e.sci] = new Array(24).fill(0));
+        mrow[new Date(e.t).getHours()]++;
+      });
+      return matrix;
+    });
+  }
+
+  // Public entry for the wall clock. Resolves { matrix, source } with source
+  // 'api' | 'ha'. `pool` is an optional species allow-list for the batch
+  // endpoint (the daily-summary and HA paths return every species anyway).
+  function clockHourMatrix(opts) {
+    opts = opts || {};
+    var days = Math.max(1, Math.min(365, +opts.windowDays || 30));
+    var minConf = +opts.minConfidence || 0;
+    var now = new Date();
+    var startStr = bgDateStr(new Date(now.getTime() - (days - 1) * 86400000));
+    var endStr = bgDateStr(now);
+    var startMs = now.getTime() - days * 86400000;
+    var mode = AV_CFG.dataSource || 'auto';
+    var api = function () {
+      return bgHourlyMatrix(opts.pool, startStr, endStr, minConf)
+        .then(function (m) { return { matrix: m, source: 'api' }; });
+    };
+    var ha = function () {
+      return hhHourlyMatrix(startMs, minConf)
+        .then(function (m) { return { matrix: m, source: 'ha' }; });
+    };
+    if (mode === 'ha') return haAvailable() ? ha() : Promise.reject('HA data source needs the card or a haToken');
+    if (mode === 'api' || !haAvailable()) return api();
+    return api().catch(function (e) { return ha().catch(function () { return Promise.reject(e); }); });
+  }
+
   function bgStats() {
     var now = new Date();
     var weekStart = bgDateStr(new Date(now.getTime() - 7 * 86400000));
@@ -940,6 +1075,91 @@
     _haMemo[key] = { t: now, p: p };
     p.catch(function () { if (_haMemo[key] && _haMemo[key].p === p) delete _haMemo[key]; });
     return p;
+  }
+
+  // Call an HA service. Through the card's own hass connection (WebSocket)
+  // when present, else a long-lived-token REST POST. `wantResponse` uses
+  // the return_response path (HA 2023.9+) and resolves the service response
+  // object ({ <entity_id>: {...} } for calendar.get_events, etc.).
+  function haCallService(domain, service, data, target, wantResponse) {
+    var hass = AV_CFG.__getHass && AV_CFG.__getHass();
+    if (hass && hass.callWS) {
+      var msg = {
+        type: 'call_service', domain: domain, service: service,
+        service_data: data || {}, return_response: !!wantResponse,
+      };
+      if (target) msg.target = target;
+      return hass.callWS(msg).then(function (r) {
+        return wantResponse ? (r && r.response) : r;
+      });
+    }
+    var token = AV_CFG.haToken || (AV_CFG.wall || {}).haToken;
+    if (!token) return Promise.reject('no HA access');
+    var body = {}, k;
+    for (k in (data || {})) body[k] = data[k];
+    if (target && target.entity_id) body.entity_id = target.entity_id;
+    return fetch('/api/services/' + domain + '/' + service + (wantResponse ? '?return_response' : ''), {
+      method: 'POST', cache: 'no-store',
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (j) { return wantResponse ? (j && j.service_response) : j; });
+  }
+
+  // ---- Calendar (wall widget) ----
+  // HA calendar.get_events over a ~35-day window for the configured
+  // entities, normalized to { entity, summary, allDay, startMs, endMs }.
+  // All-day events arrive as bare dates ("2026-09-08"); timed events as
+  // local ISO with an offset ("2026-09-08T09:00:00-07:00").
+  function _calParseDT(s) {
+    s = String(s || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      var d0 = s.split('-');
+      return new Date(+d0[0], +d0[1] - 1, +d0[2]).getTime();
+    }
+    if (/[+-]\d{2}:?\d{2}$|Z$/.test(s)) {
+      var dt = new Date(s);
+      return isNaN(dt) ? 0 : dt.getTime();
+    }
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6] || 0).getTime();
+    var d = new Date(s);
+    return isNaN(d) ? 0 : d.getTime();
+  }
+  function _calNormEvent(e, ent) {
+    var s = e.start || e.start_time || '';
+    var end = e.end || e.end_time || '';
+    var allDay = /^\d{4}-\d{2}-\d{2}$/.test(s);
+    var startMs = _calParseDT(s);
+    var endMs = end ? _calParseDT(end) : startMs;
+    // HA gives all-day events an exclusive end (the next day); be tolerant
+    // of feeds that repeat the start or omit the end.
+    if (endMs <= startMs) endMs = startMs + (allDay ? 86400000 : 1);
+    return {
+      entity: ent,
+      summary: e.summary || e.title || e.message || '',
+      location: e.location || '',
+      allDay: allDay,
+      start: s, end: end,
+      startMs: startMs, endMs: endMs,
+    };
+  }
+  function fetchCalendarEvents(entities, startISO, endISO) {
+    var ids = (entities || []).filter(Boolean);
+    if (!ids.length) return Promise.resolve([]);
+    return haCallService('calendar', 'get_events',
+      { start_date_time: startISO, end_date_time: endISO },
+      { entity_id: ids }, true
+    ).then(function (resp) {
+      var out = [];
+      Object.keys(resp || {}).forEach(function (ent) {
+        var evs = (resp[ent] && (resp[ent].events || resp[ent])) || [];
+        if (!Array.isArray(evs)) return;
+        evs.forEach(function (e) { if (e) out.push(_calNormEvent(e, ent)); });
+      });
+      out.sort(function (a, b) { return a.startMs - b.startMs; });
+      return out;
+    });
   }
 
   // How far back history-mode data reaches (bounded by HA's recorder
@@ -1356,6 +1576,245 @@
       '" data-fb="' + (pose === 2 ? 0 : 1) + '" onerror="__birdImgErr(this)"';
   }
   // ======================= end BirdNET-Go adapter ==========================
+
+  // ===========================================================================
+  // Audubon clock: hour -> bird assignment  (pure; no DOM, no hass)
+  // ===========================================================================
+  // Given a species x hour-of-day count matrix, assign one bird to each of the
+  // clock's 12 (or 24) hour positions, one-to-one, so each hour shows the bird
+  // most characteristic of it. Solved as a max-weight bipartite matching
+  // (Hungarian) over a score that rewards a bird being BOTH concentrated at an
+  // hour (affinity) and dominant within it (dominance), tie-broken by support -
+  // raw counts alone would hand every hour to the single commonest backyard
+  // bird.
+  //
+  // Sliced out and unit-tested by tests/test-clock-assign.js - keep everything
+  // between the markers free of references to anything outside the block.
+  //
+  //   assignHours(matrix, opts) -> { <pos>: { species, source, score, dim } }
+  //     matrix : { <scientificName>: number[24] }   counts by hour-of-day
+  //     opts.positions : 12 | 24        (default 12; 12 folds hour h with h+12)
+  //     opts.pins      : { <pos>: scientificName }   hard assignments (1..pos)
+  //     opts.incumbents: { <pos>: scientificName }   previous result -> hysteresis
+  //     opts.hysteresis: number         a challenger must beat the incumbent's
+  //                                     score by this fraction to unseat it
+  //                                     (default 0.25)
+  //   source in { pinned, history, borrowed, fallback, reused }
+  //   dim: true  -> thin data (borrowed / fallback / reused); UI de-emphasizes.
+
+  // Clock position (1..positions) for an hour-of-day. 12-hour: position 12 sits
+  // at the top and covers hours 0 and 12; 24-hour: position 24 is midnight.
+  function clockPosOfHour(h, positions) {
+    h = ((h % 24) + 24) % 24;
+    if (positions === 24) return h === 0 ? 24 : h;
+    return ((h + 11) % 12) + 1;
+  }
+
+  // Max-weight perfect matching on a square weight matrix (n x n), via the
+  // O(n^3) Hungarian / Kuhn-Munkres shortest-augmenting-path form run on
+  // cost = (maxWeight + 1) - weight. Returns row -> col (0-indexed).
+  function _hungarianMaxWeight(weight) {
+    var n = weight.length;
+    if (!n) return [];
+    var C = 0, r, c;
+    for (r = 0; r < n; r++) for (c = 0; c < n; c++) if (weight[r][c] > C) C = weight[r][c];
+    C += 1;
+    var a = [];
+    for (var i = 0; i <= n; i++) {
+      a[i] = [];
+      for (var j = 0; j <= n; j++) a[i][j] = (i && j) ? (C - weight[i - 1][j - 1]) : 0;
+    }
+    var INF = Infinity;
+    var u = new Array(n + 1).fill(0);
+    var v = new Array(n + 1).fill(0);
+    var p = new Array(n + 1).fill(0);
+    var way = new Array(n + 1).fill(0);
+    for (var row = 1; row <= n; row++) {
+      p[0] = row;
+      var j0 = 0;
+      var minv = new Array(n + 1).fill(INF);
+      var used = new Array(n + 1).fill(false);
+      do {
+        used[j0] = true;
+        var i0 = p[j0], delta = INF, j1 = -1;
+        for (var jc = 1; jc <= n; jc++) {
+          if (used[jc]) continue;
+          var cur = a[i0][jc] - u[i0] - v[jc];
+          if (cur < minv[jc]) { minv[jc] = cur; way[jc] = j0; }
+          if (minv[jc] < delta) { delta = minv[jc]; j1 = jc; }
+        }
+        for (var jd = 0; jd <= n; jd++) {
+          if (used[jd]) { u[p[jd]] += delta; v[jd] -= delta; }
+          else { minv[jd] -= delta; }
+        }
+        j0 = j1;
+      } while (p[j0] !== 0);
+      do {
+        var wprev = way[j0];
+        p[j0] = p[wprev];
+        j0 = wprev;
+      } while (j0);
+    }
+    var res = new Array(n).fill(-1);
+    for (var col = 1; col <= n; col++) if (p[col] > 0) res[p[col] - 1] = col - 1;
+    return res;
+  }
+
+  // { sci: number[24] } -> { sci: number[positions] } by summing each hour into
+  // its clock position (12-hour mode adds hour h and hour h+12 together).
+  function _foldMatrix(matrix, positions) {
+    var folded = {};
+    Object.keys(matrix || {}).forEach(function (sci) {
+      var src = matrix[sci] || [];
+      var out = new Array(positions).fill(0);
+      for (var h = 0; h < 24; h++) out[clockPosOfHour(h, positions) - 1] += +src[h] || 0;
+      folded[sci] = out;
+    });
+    return folded;
+  }
+
+  // score[sci][posIndex] = sqrt(affinity * dominance) * support, plus the row
+  // and column totals the fallback walk needs.
+  function _scoreMatrix(folded, positions) {
+    var scis = Object.keys(folded);
+    var colTotal = new Array(positions).fill(0);
+    var rowTotal = {};
+    scis.forEach(function (sci) {
+      var row = folded[sci], t = 0;
+      for (var p = 0; p < positions; p++) { t += row[p]; colTotal[p] += row[p]; }
+      rowTotal[sci] = t;
+    });
+    var score = {};
+    scis.forEach(function (sci) {
+      var row = folded[sci];
+      var sr = score[sci] = new Array(positions).fill(0);
+      for (var p = 0; p < positions; p++) {
+        var cnt = row[p];
+        if (!cnt || !rowTotal[sci] || !colTotal[p]) continue;
+        var A = cnt / rowTotal[sci];        // how characteristic this hour is of the bird
+        var D = cnt / colTotal[p];          // how much of this hour belongs to the bird
+        var S = Math.log(1 + cnt);          // support: lean toward well-attested birds
+        sr[p] = Math.sqrt(A * D) * S;
+      }
+    });
+    return { score: score, colTotal: colTotal, rowTotal: rowTotal };
+  }
+
+  function assignHours(matrix, opts) {
+    opts = opts || {};
+    var positions = opts.positions === 24 ? 24 : 12;
+    var pins = opts.pins || {};
+    var incumbents = opts.incumbents || {};
+    var hyst = (typeof opts.hysteresis === 'number') ? opts.hysteresis : 0.25;
+
+    var out = {};
+    var folded = _foldMatrix(matrix, positions);
+
+    // 1. Pins first: fix the position and drop the species from the pool, so
+    //    the solver structurally cannot double-assign it.
+    var pinnedSci = {};
+    var openPos = [];
+    for (var pos1 = 1; pos1 <= positions; pos1++) {
+      if (pins[pos1]) {
+        out[pos1] = { species: pins[pos1], source: 'pinned', score: Infinity, dim: false };
+        pinnedSci[pins[pos1]] = true;
+      } else {
+        openPos.push(pos1);
+      }
+    }
+    var poolFolded = {};
+    Object.keys(folded).forEach(function (s) { if (!pinnedSci[s]) poolFolded[s] = folded[s]; });
+    var pool = Object.keys(poolFolded);
+
+    // 2. Score over the remaining pool, then Hungarian over the open positions
+    //    that actually have detections.
+    var sm = _scoreMatrix(poolFolded, positions);
+    var score = sm.score;
+
+    function posHasData(pos) { return sm.colTotal[pos - 1] > 0; }
+    var dataPos = openPos.filter(posHasData);
+    var emptyPos = openPos.filter(function (pos) { return !posHasData(pos); });
+
+    var used = {};
+    if (dataPos.length && pool.length) {
+      var R = dataPos.length, K = pool.length, n = Math.max(R, K);
+      var W = [];
+      for (var wi = 0; wi < n; wi++) {
+        W[wi] = [];
+        for (var wj = 0; wj < n; wj++) {
+          var sc = 0;
+          if (wi < R && wj < K) {
+            sc = score[pool[wj]][dataPos[wi] - 1];
+            // Hysteresis: inflate the incumbent's own cell so a challenger has
+            // to clear it by `hyst` before the matching prefers the swap.
+            if (incumbents[dataPos[wi]] === pool[wj] && sc > 0) sc *= (1 + hyst);
+          }
+          W[wi][wj] = sc;
+        }
+      }
+      var m = _hungarianMaxWeight(W);
+      for (var mi = 0; mi < R; mi++) {
+        var mj = m[mi], mpos = dataPos[mi];
+        if (mj < 0 || mj >= K) { emptyPos.push(mpos); continue; }
+        var msci = pool[mj], raw = score[msci][mpos - 1];
+        if (raw > 0) {
+          out[mpos] = { species: msci, source: 'history', score: raw, dim: false };
+          used[msci] = true;
+        } else {
+          emptyPos.push(mpos);   // matched only to a bird never heard here
+        }
+      }
+    } else {
+      emptyPos = openPos.slice();
+    }
+
+    // 3. Positions with no data (or left unfilled): borrow the best still-unused
+    //    bird from the nearest position that DOES have data; then the global
+    //    top bird; then, pool exhausted, reuse it (marked).
+    emptyPos = emptyPos.filter(function (pos, i, arr) {
+      return arr.indexOf(pos) === i && !out[pos];
+    }).sort(function (x, y) { return x - y; });
+
+    var globalOrder = pool.slice().sort(function (x, y) {
+      return (sm.rowTotal[y] || 0) - (sm.rowTotal[x] || 0);
+    });
+    function circDist(x, y) { var d = Math.abs(x - y); return Math.min(d, positions - d); }
+
+    emptyPos.forEach(function (pos) {
+      var borrow = null, bestD = Infinity;
+      for (var q = 1; q <= positions; q++) {
+        if (q === pos || sm.colTotal[q - 1] <= 0) continue;
+        var d = circDist(pos, q);
+        if (d >= bestD) continue;
+        var cand = null, candS = -1;
+        for (var pi = 0; pi < pool.length; pi++) {
+          var s = pool[pi];
+          if (used[s]) continue;
+          var qs = score[s][q - 1];
+          if (qs > candS) { candS = qs; cand = s; }
+        }
+        if (cand) { borrow = cand; bestD = d; }
+      }
+      if (borrow) {
+        out[pos] = { species: borrow, source: 'borrowed', score: 0, dim: true };
+        used[borrow] = true;
+        return;
+      }
+      var top = globalOrder.filter(function (s) { return !used[s]; })[0];
+      if (top) {
+        out[pos] = { species: top, source: 'fallback', score: 0, dim: true };
+        used[top] = true;
+        return;
+      }
+      out[pos] = globalOrder.length
+        ? { species: globalOrder[0], source: 'reused', score: 0, dim: true }
+        : { species: null, source: 'fallback', score: 0, dim: true };
+    });
+
+    return out;
+  }
+
+  // ===================== end Audubon clock assignment ======================
 
   // ---- Sliding pill helper ----
   // Each segmented control has a single .seg-pill element that we move via
@@ -1958,17 +2417,37 @@
     // (card builds) a configured title floated over the collage. Each box
     // gets a little air so birds don't kiss the letterforms.
     var obstacles = [];
-    function addObstacle(el) {
-      if (!el) return;
+    function addObstacle(el, opts) {
+      if (!el) return false;
       var b = el.getBoundingClientRect();
-      if (!b.width || !b.height) return;
+      if (!b.width || !b.height) return false;
       var cb = collage.getBoundingClientRect();
       var M = 12;
-      obstacles.push({ x: b.left - cb.left - M, y: b.top - cb.top - M,
-                       w: b.width + 2 * M, h: b.height + 2 * M });
+      var ob = { x: b.left - cb.left - M, y: b.top - cb.top - M,
+                 w: b.width + 2 * M, h: b.height + 2 * M };
+      // An ellipse keep-out (the round analog dial) blocks only the cells
+      // inside the oval, freeing the four corners of its bounding square
+      // for birds to tuck into. maskPack already handles ob.ellipse.
+      if (opts && opts.ellipse) ob.ellipse = true;
+      obstacles.push(ob);
+      return true;
     }
     var wwEl = document.getElementById('wallWidgets');
-    if (wwEl && !wwEl.hidden) addObstacle(wwEl);
+    if (wwEl && !wwEl.hidden) {
+      // Register each sub-widget on its own so the flock can nest into the
+      // gaps between clock / weather / calendar and, for the round dial,
+      // the corners of its bounding box. Falls back to the whole block if
+      // the children haven't measured yet (jsdom, first paint).
+      var wwClockEl = document.getElementById('wwClock');
+      var wwRound = !!(wwClockEl && wwClockEl.classList.contains('ww-analog'));
+      var wwGot = 0;
+      if (wwClockEl && !wwClockEl.hidden) wwGot += addObstacle(wwClockEl, { ellipse: wwRound }) ? 1 : 0;
+      var wwWxEl = document.getElementById('wwWeather');
+      if (wwWxEl && !wwWxEl.hidden) wwGot += addObstacle(wwWxEl) ? 1 : 0;
+      var wwCalEl = document.getElementById('wwCalendar');
+      if (wwCalEl && !wwCalEl.hidden) wwGot += addObstacle(wwCalEl) ? 1 : 0;
+      if (!wwGot) addObstacle(wwEl);
+    }
     // The optional species-name strip along the bottom (issue #69). Filled
     // from the same item list FIRST so its settled height is what gets
     // stamped into the grid - a long list on a busy day pushes the flock
@@ -5528,6 +6007,7 @@
     var wallOn      = urlFlag('wall');
     var showClock   = !!WALL.clock || wallOn;
     var showWeather = !!WALL.weather || wallOn;
+    var showCalendar = !!WALL.calendar || urlFlag('calendar');
     var hideCursor  = !!WALL.hideCursor || wallOn;
 
     var wrap = document.getElementById('wallWidgets');
@@ -5536,7 +6016,7 @@
     if (['top-left', 'top-right', 'bottom-left', 'bottom-right'].indexOf(corner) >= 0) {
       wrap.setAttribute('data-corner', corner);
     }
-    if (showClock || showWeather) wrap.hidden = false;
+    if (showClock || showWeather || showCalendar) wrap.hidden = false;
 
     // The widget box is a packing obstacle, so whenever its size settles
     // or changes (first weather paint, mostly) the collage re-packs
@@ -5552,13 +6032,24 @@
     }
 
     // ---- Clock ----
-    // Minute precision; re-renders on the minute boundary so it never
-    // drifts visibly. Locale decides 12/24h and date wording.
+    // Digital (default): minute precision, re-rendered on the minute
+    // boundary so it never drifts visibly; locale decides 12/24h wording.
+    // Analog (clock_style: analog | both): an Audubon "singing bird clock"
+    // dial - SVG face + hands, a bird illustration at each hour position
+    // drawn from that hour's detection history (assignHours). The hand loop
+    // is pure `transform` writes so it never re-runs the collage packer.
     if (showClock) {
       var clockEl = document.getElementById('wwClock');
       var timeEl = document.getElementById('wwTime');
       var dateEl = document.getElementById('wwDate');
       clockEl.hidden = false;
+
+      var clockStyle = String(WALL.clockStyle || urlStr('clock_style') || 'digital').toLowerCase();
+      if (['digital', 'analog', 'both'].indexOf(clockStyle) < 0) clockStyle = 'digital';
+      var analogClock = clockStyle === 'analog' || clockStyle === 'both';
+      clockEl.classList.toggle('ww-analog', analogClock);
+      clockEl.classList.toggle('ww-digital-hidden', clockStyle === 'analog');
+
       var drawClock = function () {
         var now = new Date();
         timeEl.textContent = now.toLocaleTimeString(BCP47, { hour: 'numeric', minute: '2-digit' });
@@ -5566,6 +6057,250 @@
         setTimeout(drawClock, (61 - now.getSeconds()) * 1000);
       };
       drawClock();
+
+      if (analogClock) initAnalogDial();
+    }
+
+    function initAnalogDial() {
+      var positions = (+WALL.clockHours === 24) ? 24 : 12;
+      var wantBirds = WALL.clockBirds !== false;
+      var wantSeconds = !!WALL.clockSeconds;
+      var chimeHook = null;
+      var dialEl = document.getElementById('wwDial');
+      var faceEl = document.getElementById('wwDialFace');
+      var birdsEl = document.getElementById('wwDialBirds');
+      var nameEl = document.getElementById('wwDialName');
+      if (!dialEl || !faceEl) return;
+      dialEl.hidden = false;
+
+      var NS = 'http://www.w3.org/2000/svg';
+      function mk(tag, attrs) {
+        var e = document.createElementNS(NS, tag);
+        for (var k in attrs) e.setAttribute(k, attrs[k]);
+        return e;
+      }
+
+      // --- static face: rim, hour ticks, hands, hub ---
+      faceEl.textContent = '';
+      faceEl.appendChild(mk('circle', { cx: 100, cy: 100, r: 96, class: 'ww-dial-rim' }));
+      for (var ti = 0; ti < positions; ti++) {
+        var ta = (ti / positions) * 2 * Math.PI;
+        var major = (positions === 24) ? (ti % 2 === 0) : true;
+        faceEl.appendChild(mk('line', {
+          x1: 100 + Math.sin(ta) * (major ? 87 : 90), y1: 100 - Math.cos(ta) * (major ? 87 : 90),
+          x2: 100 + Math.sin(ta) * 94, y2: 100 - Math.cos(ta) * 94, class: 'ww-dial-tick',
+        }));
+      }
+      var hHand = mk('line', { x1: 100, y1: 108, x2: 100, y2: 48, class: 'ww-hand ww-hand-h' });
+      var mHand = mk('line', { x1: 100, y1: 110, x2: 100, y2: 28, class: 'ww-hand ww-hand-m' });
+      var sHand = mk('line', { x1: 100, y1: 116, x2: 100, y2: 22, class: 'ww-hand ww-hand-s' });
+      faceEl.appendChild(hHand);
+      faceEl.appendChild(mHand);
+      if (wantSeconds) faceEl.appendChild(sHand);
+      faceEl.appendChild(mk('circle', { cx: 100, cy: 100, r: 3.2, class: 'ww-dial-hub' }));
+
+      // Unwrapped rotation: fold the delta into (-180, 180] so the hands
+      // never spin backwards through the whole face at the 59->00 wrap.
+      function setHand(el, deg) {
+        var prev = el.__ang || 0;
+        var d = (((deg - prev) % 360) + 540) % 360 - 180;
+        el.__ang = prev + d;
+        el.style.transform = 'rotate(' + el.__ang.toFixed(2) + 'deg)';
+      }
+
+      // --- hour -> bird assignment, rendered as rim thumbnails ---
+      var assignment = {};
+      var activePos = -1;
+
+      function birdLabel(sci) {
+        var list = (DATA.recent && DATA.recent.species) || [];
+        for (var i = 0; i < list.length; i++) if (list[i].sci === sci) return list[i].com || sci;
+        return sci;
+      }
+      function renderActive() {
+        var imgs = birdsEl.getElementsByTagName('img');
+        for (var i = 0; i < imgs.length; i++) {
+          imgs[i].classList.toggle('is-active', +imgs[i].getAttribute('data-pos') === activePos);
+        }
+        var a = assignment[activePos];
+        nameEl.textContent = (a && a.species) ? birdLabel(a.species) : '';
+      }
+      function setActive(hr) {
+        var pos = clockPosOfHour(hr, positions);
+        if (pos === activePos) return;
+        activePos = pos;
+        renderActive();
+      }
+      function renderRim() {
+        birdsEl.textContent = '';
+        if (wantBirds) {
+          for (var pos = 1; pos <= positions; pos++) {
+            var a = assignment[pos];
+            if (!a || !a.species) continue;
+            var ang = (pos / positions) * 2 * Math.PI;
+            var img = document.createElement('img');
+            img.className = 'ww-dial-bird' + (a.dim ? ' is-dim' : '');
+            img.setAttribute('data-pos', String(pos));
+            img.setAttribute('data-sci', a.species);
+            img.setAttribute('data-slug', slugify(a.species));
+            img.setAttribute('data-fb', '1');
+            img.setAttribute('loading', 'lazy');
+            img.setAttribute('decoding', 'async');
+            img.alt = birdLabel(a.species);
+            img.onerror = function () { window.__birdImgErr(this); };
+            img.src = sketchSrc(a.species, 1);
+            img.style.left = (50 + Math.sin(ang) * 39) + '%';
+            img.style.top = (50 - Math.cos(ang) * 39) + '%';
+            birdsEl.appendChild(img);
+          }
+        }
+        renderActive();
+        repackIfGrown();
+      }
+
+      birdsEl.addEventListener('click', function (ev) {
+        var img = ev.target && ev.target.closest && ev.target.closest('img.ww-dial-bird');
+        if (img) handleBirdTap(img.getAttribute('data-sci'));
+      });
+      birdsEl.addEventListener('mouseover', function (ev) {
+        var img = ev.target && ev.target.closest && ev.target.closest('img.ww-dial-bird');
+        if (img) nameEl.textContent = img.alt || '';
+      });
+      birdsEl.addEventListener('mouseout', function () { renderActive(); });
+
+      function recompute() {
+        var pool = ((DATA.recent && DATA.recent.species) || []).map(function (r) { return r.sci; });
+        return clockHourMatrix({
+          windowDays: +WALL.clockWindowDays || 30,
+          minConfidence: +WALL.clockMinConfidence || 0,
+          pool: pool.length ? pool : null,
+        }).then(function (res) {
+          var pins = {};
+          var hb = WALL.hourBirds || {};
+          Object.keys(hb).forEach(function (h) {
+            var p = clockPosOfHour(+h, positions);
+            if (!pins[p]) pins[p] = hb[h];
+          });
+          var prev = null;
+          try { prev = JSON.parse(readLS('bird:clockAssign', 'null')); } catch (e) { prev = null; }
+          var incumbents = (prev && prev.positions === positions && prev.byPos) ? prev.byPos : {};
+          assignment = assignHours(res.matrix, { positions: positions, pins: pins, incumbents: incumbents });
+          var byPos = {};
+          Object.keys(assignment).forEach(function (p) { byPos[p] = assignment[p].species; });
+          writeLS('bird:clockAssign', JSON.stringify({ ts: Date.now(), positions: positions, byPos: byPos }));
+          renderRim();
+        }).catch(function () { /* no data yet - the dial just shows no birds */ });
+      }
+
+      // --- 1s hand loop: transform writes only, never touches layout ---
+      var tick = function () {
+        var now = new Date();
+        var ms = now.getMilliseconds();
+        var s = now.getSeconds() + ms / 1000;
+        var m = now.getMinutes() + s / 60;
+        var h12 = (now.getHours() % 12) + m / 60;
+        setHand(hHand, h12 / 12 * 360);
+        setHand(mHand, m / 60 * 360);
+        if (wantSeconds) setHand(sHand, s / 60 * 360);
+        setActive(now.getHours());
+        if (chimeHook) chimeHook(now);
+        setTimeout(tick, wantSeconds ? Math.max(200, 1000 - ms) : (61 - now.getSeconds()) * 1000);
+      };
+
+      // --- Chimes: on the hour, play that hour's bird call ---
+      // Resolution per hour: hour_call_overrides[h] -> {clock_call_base}
+      // {scientific-slug}.mp3 -> silent. Fires exactly once per hour change
+      // (deduped on lastChimeHour), never on the initial load, never in
+      // quiet hours. Browser autoplay needs a gesture first - the unlock
+      // overlay stays up until one lands; media_player output skips all that.
+      if (WALL.clockChime) {
+        var chimeVol = Math.max(0, Math.min(1, WALL.clockChimeVolume == null ? 0.7 : +WALL.clockChimeVolume));
+        var chimeOut = String(WALL.clockChimeOutput || 'browser').toLowerCase();
+        var chimeMP = WALL.clockChimeMediaPlayer || '';
+        var callBase = WALL.clockCallBase || '/local/birdcalls/';
+        if (callBase && !/\/$/.test(callBase)) callBase += '/';
+        var callOver = WALL.hourCallOverrides || {};
+        var quiet = (function (spec) {
+          var m = String(spec || '').match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+          if (!m) return null;
+          return { start: (+m[1]) * 60 + (+m[2]), end: (+m[3]) * 60 + (+m[4]) };
+        })(WALL.clockChimeQuietHours);
+        var chimeUnlocked = (chimeOut === 'media_player');
+        var chimeCtx = null;
+        var lastChimeHour = -1;
+
+        var unlockEl = document.getElementById('wwChimeUnlock');
+        function inQuiet(now) {
+          if (!quiet || quiet.start === quiet.end) return false;
+          var mins = now.getHours() * 60 + now.getMinutes();
+          return quiet.start < quiet.end
+            ? (mins >= quiet.start && mins < quiet.end)
+            : (mins >= quiet.start || mins < quiet.end);
+        }
+        function callUrl(hr, sci) {
+          if (callOver[hr]) return callOver[hr];
+          return sci ? (callBase + slugify(sci) + '.mp3') : '';
+        }
+        function unlockAudio() {
+          try {
+            var Ctx = window.AudioContext || window.webkitAudioContext;
+            if (Ctx) {
+              chimeCtx = chimeCtx || new Ctx();
+              if (chimeCtx.state === 'suspended') chimeCtx.resume();
+              var src = chimeCtx.createBufferSource();
+              src.buffer = chimeCtx.createBuffer(1, 1, 22050);
+              src.connect(chimeCtx.destination);
+              src.start(0);
+            }
+            chimeUnlocked = true;
+            if (unlockEl) unlockEl.hidden = true;
+          } catch (e) { /* stay visible; try again on the next gesture */ }
+        }
+        if (chimeOut !== 'media_player' && unlockEl) {
+          unlockEl.hidden = false;
+          unlockEl.addEventListener('click', unlockAudio);
+          document.addEventListener('pointerdown', unlockAudio, { passive: true });
+          document.addEventListener('keydown', unlockAudio);
+        }
+        function playChime(hr) {
+          var a = assignment[clockPosOfHour(hr, positions)];
+          var url = callUrl(hr, a && a.species);
+          if (!url) return;
+          if (chimeOut === 'media_player') {
+            if (!chimeMP) return;
+            var abs = /^https?:/.test(url) ? url : (location.origin + url);
+            haCallService('media_player', 'play_media',
+              { media_content_id: abs, media_content_type: 'music' },
+              { entity_id: chimeMP }).catch(function () {});
+            return;
+          }
+          try {
+            var au = new Audio(url);
+            au.volume = chimeVol;
+            var p = au.play();
+            if (p && p.catch) p.catch(function () {
+              chimeUnlocked = false;
+              if (unlockEl) unlockEl.hidden = false;
+            });
+          } catch (e) { /* ignore */ }
+        }
+        chimeHook = function (now) {
+          var hr = now.getHours();
+          if (hr === lastChimeHour) return;
+          var first = lastChimeHour === -1;
+          lastChimeHour = hr;
+          if (first || inQuiet(now)) return;
+          if (chimeOut !== 'media_player' && !chimeUnlocked) return;
+          playChime(hr);
+        };
+      }
+
+      tick();
+
+      var reassign = String(WALL.clockReassign || 'daily').toLowerCase();
+      recompute();
+      if (reassign === 'hourly') setInterval(recompute, 3600000);
+      else if (reassign !== 'manual') setInterval(recompute, 24 * 3600000);
     }
 
     // ---- Weather ----
@@ -5574,9 +6309,81 @@
       var tempEl = document.getElementById('wwTemp');
       var condEl = document.getElementById('wwCond');
       var sunEl = document.getElementById('wwSun');
+      var fcEl = document.getElementById('wwForecast');
+      // Daily forecast: 0 = off (unchanged behaviour). Only the HA source
+      // paths (injected hass / long-lived token) can serve it - it needs
+      // the weather.get_forecasts service; BirdNET-Go's /weather/latest
+      // has no multi-day forecast, so that path stays current-only.
+      var fcDays = Math.max(0, Math.min(10, parseInt(WALL.forecastDays, 10) || 0));
       var hhmm = function (iso) {
         var d = new Date(iso);
         return isNaN(d) ? '' : d.toLocaleTimeString(BCP47, { hour: 'numeric', minute: '2-digit' });
+      };
+      // HA condition slug -> a single glyph for the forecast column. The
+      // condition word still rides along as the column's title/tooltip.
+      var CONDGLYPH = {
+        'clear-night': '☾', 'cloudy': '☁', 'fog': '☁',
+        'hail': '❄', 'lightning': '⚡', 'lightning-rainy': '⚡',
+        'partlycloudy': '⛅', 'pouring': '☔', 'rainy': '☔',
+        'snowy': '❄', 'snowy-rainy': '❄', 'sunny': '☀',
+        'exceptional': '⚠',
+      };
+      var fcDow = function (dt) {
+        var d = new Date(dt);
+        return isNaN(d) ? '' : d.toLocaleDateString(BCP47, { weekday: 'short' });
+      };
+      // "2mm 40%" - amount (rounded, 1dp under 10) then probability; each
+      // half is dropped when it's absent or negligible.
+      var fcPrecip = function (f) {
+        var amt = '';
+        if (typeof f.precip === 'number' && f.precip >= 0.1) {
+          var v = f.precip >= 10 ? Math.round(f.precip) : Math.round(f.precip * 10) / 10;
+          amt = v + (f.precipUnit || 'mm');
+        }
+        var pop = (typeof f.pop === 'number' && f.pop >= 10) ? Math.round(f.pop) + '%' : '';
+        return [amt, pop].filter(Boolean).join(' ');
+      };
+      // HA get_forecasts item -> the shape paintForecast wants. `unit` is
+      // the entity's precipitation_unit attribute (mm / in / ...).
+      var fcFromHA = function (arr, unit) {
+        if (!Array.isArray(arr)) return [];
+        return arr.map(function (f) {
+          return {
+            dt: f.datetime,
+            hi: typeof f.temperature === 'number' ? f.temperature : null,
+            lo: typeof f.templow === 'number' ? f.templow : null,
+            cond: f.condition || '',
+            precip: typeof f.precipitation === 'number' ? f.precipitation : null,
+            precipUnit: unit || 'mm',
+            pop: typeof f.precipitation_probability === 'number' ? f.precipitation_probability : null,
+          };
+        });
+      };
+      var paintForecast = function (list) {
+        if (!fcEl) return;
+        fcEl.textContent = '';
+        var days = (list || []).slice(0, fcDays);
+        days.forEach(function (f) {
+          var col = document.createElement('div');
+          col.className = 'ww-fc-day';
+          var add = function (cls, text, title) {
+            if (!text && !title) return;
+            var s = document.createElement('span');
+            s.className = cls;
+            s.textContent = text || '';
+            if (title) s.title = title;
+            col.appendChild(s);
+          };
+          add('ww-fc-dow', fcDow(f.dt));
+          var glyph = CONDGLYPH[f.cond] || '';
+          if (glyph) add('ww-fc-ico', glyph, haCond(f.cond));
+          add('ww-fc-hi', typeof f.hi === 'number' ? Math.round(f.hi) + '°' : '');
+          add('ww-fc-lo', typeof f.lo === 'number' ? Math.round(f.lo) + '°' : '');
+          add('ww-fc-pop', fcPrecip(f));
+          if (col.children.length) fcEl.appendChild(col);
+        });
+        fcEl.hidden = fcEl.children.length === 0;
+        repackIfGrown();
       };
       var paintWeather = function (temp, cond, rise, set) {
         if (typeof temp !== 'number' || isNaN(temp)) return;
@@ -5597,6 +6404,16 @@
         return fetch('/api' + path, {
           cache: 'no-store',
           headers: { 'Authorization': 'Bearer ' + WALL.haToken },
+        }).then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
+      };
+      var haPost = function (path, body) {
+        return fetch('/api' + path, {
+          method: 'POST', cache: 'no-store',
+          headers: {
+            'Authorization': 'Bearer ' + WALL.haToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body || {}),
         }).then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
       };
       // HA condition slugs -> printable words. Standalone/fallback path:
@@ -5626,7 +6443,9 @@
               haEntity = hit.entity_id;
               return haEntity;
             });
+        var resolvedEnt = '';
         return entityP.then(function (ent) {
+          resolvedEnt = ent;
           return Promise.all([
             haJson('/states/' + ent),
             haJson('/states/sun.sun').catch(function () { return null; }),
@@ -5640,6 +6459,16 @@
             sun.next_rising ? hhmm(sun.next_rising) : '',
             sun.next_setting ? hhmm(sun.next_setting) : ''
           );
+          if (fcDays > 0 && resolvedEnt) {
+            // REST service call with return_response (HA 2023.9+):
+            // { service_response: { <entity>: { forecast: [...] } } }
+            haPost('/services/weather/get_forecasts?return_response', {
+              entity_id: resolvedEnt, type: 'daily',
+            }).then(function (j) {
+              var sr = j && j.service_response && j.service_response[resolvedEnt];
+              paintForecast(fcFromHA(sr && sr.forecast, attrs.precipitation_unit));
+            }).catch(function () { /* no forecast support - leave it hidden */ });
+          }
         });
       };
 
@@ -5698,6 +6527,19 @@
           sun.next_rising ? hhmm(sun.next_rising) : '',
           sun.next_setting ? hhmm(sun.next_setting) : ''
         );
+        if (fcDays > 0 && hass.callWS) {
+          // Modern HA has no `forecast` attribute - pull it from the
+          // weather.get_forecasts service: { response: { <entity>:
+          // { forecast: [...] } } }.
+          hass.callWS({
+            type: 'call_service', domain: 'weather', service: 'get_forecasts',
+            service_data: { type: 'daily' }, target: { entity_id: ent },
+            return_response: true,
+          }).then(function (resp) {
+            var r = resp && resp.response && resp.response[ent];
+            paintForecast(fcFromHA(r && r.forecast, attrs.precipitation_unit));
+          }).catch(function () { /* no forecast support - leave it hidden */ });
+        }
         return Promise.resolve();
       };
 
@@ -5710,6 +6552,116 @@
       };
       drawWeather();
       setInterval(drawWeather, 10 * 60 * 1000);
+    }
+
+    // ---- Calendar ----
+    // A month grid and/or agenda from HA's calendar.get_events (needs the
+    // card's hass connection or wall.haToken), ~35-day window, polled every
+    // 5 min. Themed to match the paper/ink variables like the rest of the
+    // block; birds pack around it via the #wwCalendar obstacle.
+    if (showCalendar) {
+      var calEl = document.getElementById('wwCalendar');
+      var calEntities = WALL.calendarEntities || [];
+      if (typeof calEntities === 'string') calEntities = calEntities.split(/[\s,]+/);
+      calEntities = calEntities.filter(Boolean);
+      var calView = String(WALL.calendarView || 'both').toLowerCase();
+      if (['month', 'agenda', 'both'].indexOf(calView) < 0) calView = 'both';
+      var calWeekStart = String(WALL.calendarWeekStart || 'sunday').toLowerCase() === 'monday' ? 1 : 0;
+      var agendaDays = Math.max(1, +WALL.agendaDaysAhead || 7);
+      var agendaMax = Math.max(1, +WALL.agendaMaxEvents || 6);
+      var DAY = 86400000;
+      var calEvents = [];
+      var lastCalSig = '';
+
+      function calStartOfDay(ms) { var d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); }
+      function calDayEvents(dayStart) {
+        var dayEnd = dayStart + DAY;
+        return calEvents.filter(function (e) { return e.startMs < dayEnd && e.endMs > dayStart; });
+      }
+      function calDayLabel(dayStart, todayStart) {
+        var diff = Math.round((dayStart - todayStart) / DAY);
+        if (diff === 0) return tt('cal.today');
+        if (diff === 1) return tt('cal.tomorrow');
+        return new Intl.DateTimeFormat(BCP47, { weekday: 'short' }).format(new Date(dayStart));
+      }
+
+      function renderMonth(now) {
+        var y = now.getFullYear(), mo = now.getMonth();
+        var first = new Date(y, mo, 1);
+        var lead = (first.getDay() - calWeekStart + 7) % 7;
+        var gridStart = calStartOfDay(first.getTime()) - lead * DAY;
+        var todayStart = calStartOfDay(now.getTime());
+        var monthEnd = new Date(y, mo + 1, 0).getTime();
+        var weeks = (gridStart + 5 * 7 * DAY > monthEnd) ? 5 : 6;
+        var wdFmt = new Intl.DateTimeFormat(BCP47, { weekday: 'narrow' });
+        var moFmt = new Intl.DateTimeFormat(BCP47, { month: 'long', year: 'numeric' });
+        var head = '';
+        for (var w = 0; w < 7; w++) head += '<th>' + esc(wdFmt.format(new Date(gridStart + w * DAY))) + '</th>';
+        var body = '';
+        for (var r = 0; r < weeks; r++) {
+          body += '<tr>';
+          for (var c = 0; c < 7; c++) {
+            var cellMs = gridStart + (r * 7 + c) * DAY;
+            var cd = new Date(cellMs), cls = [];
+            if (cd.getMonth() !== mo) cls.push('is-out');
+            if (cellMs === todayStart) cls.push('is-today');
+            if (calDayEvents(cellMs).length) cls.push('has-ev');
+            body += '<td class="' + cls.join(' ') + '">' + cd.getDate() + '</td>';
+          }
+          body += '</tr>';
+        }
+        return '<div class="ww-cal-title">' + esc(moFmt.format(now)) + '</div>' +
+          '<table class="ww-cal-grid"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
+      }
+
+      function renderAgenda(now) {
+        var todayStart = calStartOfDay(now.getTime());
+        var horizon = todayStart + agendaDays * DAY;
+        var tFmt = new Intl.DateTimeFormat(BCP47, { hour: 'numeric', minute: '2-digit' });
+        var up = calEvents.filter(function (e) {
+          return e.endMs > now.getTime() && e.startMs < horizon;
+        }).slice(0, agendaMax);
+        if (!up.length) return '<div class="ww-cal-empty">' + esc(tt('cal.none')) + '</div>';
+        var rows = up.map(function (e) {
+          var d = calStartOfDay(e.startMs);
+          var when = e.allDay
+            ? calDayLabel(d, todayStart) + ' · ' + tt('cal.allDay')
+            : calDayLabel(d, todayStart) + ' ' + tFmt.format(new Date(e.startMs));
+          return '<li><span class="ww-cal-when">' + esc(when) + '</span>' +
+            '<span class="ww-cal-what">' + esc(e.summary || '—') + '</span></li>';
+        }).join('');
+        return '<ul class="ww-cal-agenda">' + rows + '</ul>';
+      }
+
+      function paintCalendar() {
+        var now = new Date();
+        var html = '';
+        if (calView !== 'agenda') html += renderMonth(now);
+        if (calView !== 'month') html += renderAgenda(now);
+        if (html === lastCalSig) return;
+        lastCalSig = html;
+        calEl.innerHTML = html;
+        calEl.hidden = !html;
+        repackIfGrown();
+      }
+
+      function loadCalendar() {
+        if (!calEntities.length) { calEl.hidden = true; return Promise.resolve(); }
+        var now = Date.now();
+        return fetchCalendarEvents(calEntities,
+          new Date(now - DAY).toISOString(),
+          new Date(now + 35 * DAY).toISOString()
+        ).then(function (evs) {
+          calEvents = evs || [];
+          lastCalSig = '';
+          paintCalendar();
+        }).catch(function () { /* no HA access / bad entity - stay hidden */ });
+      }
+
+      loadCalendar();
+      setInterval(loadCalendar, 5 * 60 * 1000);
+      // Roll "Today / Tomorrow" over at midnight without a refetch.
+      setInterval(function () { lastCalSig = ''; paintCalendar(); }, 60 * 1000);
     }
 
     // ---- Idle cursor hiding ----

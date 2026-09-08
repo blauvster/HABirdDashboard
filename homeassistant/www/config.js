@@ -207,6 +207,42 @@ window.AV_CONFIG = {
     corner: 'bottom-right', // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
     hideCursor: false,     // hide the mouse cursor after 8s idle (kiosks)
 
+    // Audubon "singing bird clock" dial. clockStyle 'analog' swaps the
+    // digital block for an SVG dial with a bird illustration at each hour
+    // (picked from that hour's detection history); 'both' keeps the digital
+    // line under it; 'digital' (default) is the original behaviour.
+    clockStyle: 'digital',    // 'digital' | 'analog' | 'both'
+    clockBirds: true,         // illustration at each hour position (analog)
+    clockHours: 12,           // 12 (fold AM+PM) | 24 (distinct dawn vs dusk)
+    clockSeconds: false,      // show a sweeping second hand
+    clockWindowDays: 30,      // history window the hour assignment is built on
+    clockReassign: 'daily',   // 'daily' | 'hourly' | 'manual' recompute cadence
+    clockMinConfidence: 0,    // drop detections below this confidence (0 = keep all)
+    hourBirds: {},            // pin a species to an hour, e.g.
+                              //   { 7: 'Turdus migratorius', 18: 'Strix varia' }
+
+    // Chimes: on the hour, play that hour's bird call (needs clockStyle
+    // 'analog' or 'both'). Browsers block autoplay until a user gesture -
+    // the dial shows a one-tap "enable chimes" overlay; clockChimeOutput
+    // 'media_player' sidesteps that by casting to a real HA speaker.
+    clockChime: false,
+    clockChimeQuietHours: '',        // e.g. '22:00-07:00' (silent overnight)
+    clockChimeVolume: 0.7,           // 0..1, browser output only
+    clockChimeOutput: 'browser',     // 'browser' | 'media_player'
+    clockChimeMediaPlayer: '',       // e.g. 'media_player.living_room'
+    clockCallBase: '/local/birdcalls/', // {scientific-slug}.mp3 lives here
+    hourCallOverrides: {},           // { 7: '/local/birdcalls/robin-custom.mp3' }
+
+    // Calendar (needs HA access - the card's hass connection, or haToken
+    // on this static page). A month grid and/or a short agenda from your
+    // HA calendar entities, refreshed every 5 minutes.
+    calendar: false,
+    calendarEntities: [],     // e.g. ['calendar.family', 'calendar.holidays']
+    calendarView: 'both',     // 'month' | 'agenda' | 'both'
+    calendarWeekStart: 'sunday', // 'sunday' | 'monday'
+    agendaDaysAhead: 7,
+    agendaMaxEvents: 6,
+
     // Weather source. With haToken set, conditions come from Home
     // Assistant itself - your configured weather integration, in HA's
     // units, plus sunrise/sunset from sun.sun. Create the token under
@@ -224,6 +260,10 @@ window.AV_CONFIG = {
     haToken: '',
     weatherEntity: '',     // e.g. 'weather.forecast_home'; empty = first
                            // weather.* entity found in HA
+    forecastDays: 0,       // days of daily forecast (high/low + precip)
+                           // under the current conditions. 0 = off. Needs
+                           // an HA weather entity (the HA / haToken source);
+                           // BirdNET-Go's built-in weather has no forecast.
     fahrenheit: false,     // BirdNET-Go source only (it reports Celsius);
                            // the HA source already uses your HA units
   },
