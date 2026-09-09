@@ -41,6 +41,13 @@
   BirdNET-Go's built-in weather has no multi-day forecast, so that source
   stays current-conditions-only.
 
+### Fixed
+- **`background: paper` now pins its own text colour.** On a paper ground
+  the card was still inheriting the dashboard theme's text colour, which
+  could land light-on-light (a dark HA theme with HA dark-mode off) and
+  wash out the clock numerals and captions. Paper mode now sets the
+  foreground to the card's ink palette so it always contrasts the ground.
+
 ## v1.5.0 — 2026-09-02
 
 ### Added

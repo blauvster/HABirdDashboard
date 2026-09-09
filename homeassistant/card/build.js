@@ -99,9 +99,15 @@ css += `
 }
 .av-shell { position: absolute; inset: 0; overflow: hidden; }
 /* Card default: transparent, so the collage sits directly on the HA
-   dashboard. background: paper restores the page's warm ground. */
+   dashboard - text stays whatever colour the dashboard theme inherits in.
+   background: paper restores the page's warm ground, so it must also pin
+   the foreground to the card's own ink: on a paper ground the inherited
+   --primary-text-color can land light-on-light (e.g. a dark HA theme with
+   HA dark-mode off) and wash the numerals / captions out. Child elements
+   mostly set color: var(--ink) already; this covers the inherited base
+   and anything using color: inherit. */
 .av-shell { background: transparent; }
-.av-shell.av-bg-paper { background: var(--paper); }
+.av-shell.av-bg-paper { background: var(--paper); color: var(--ink); }
 /* font: system swaps the editorial serif/mono pairing for HA's own
    typeface (set per-theme by HA; Roboto stock). */
 .av-shell.av-font-system {
