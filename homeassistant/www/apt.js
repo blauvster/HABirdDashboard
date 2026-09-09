@@ -6070,7 +6070,11 @@
     var wrap = document.getElementById('wallWidgets');
     if (!wrap) return;
     var corner = urlStr('corner') || WALL.corner || 'bottom-right';
-    if (['top-left', 'top-right', 'bottom-left', 'bottom-right'].indexOf(corner) >= 0) {
+    // 'center' makes the block (typically the analog dial) the display's
+    // main widget, dead-middle, with the flock ringing it - the round dial
+    // is already an elliptical packing obstacle, so birds nest for free
+    // into the corners of its bounding box instead of overlapping it.
+    if (['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center'].indexOf(corner) >= 0) {
       wrap.setAttribute('data-corner', corner);
     }
     if (showClock || showWeather || showCalendar) wrap.hidden = false;
@@ -6105,12 +6109,18 @@
       if (['digital', 'analog', 'both'].indexOf(clockStyle) < 0) clockStyle = 'digital';
       var analogClock = clockStyle === 'analog' || clockStyle === 'both';
       clockEl.classList.toggle('ww-analog', analogClock);
-      clockEl.classList.toggle('ww-digital-hidden', clockStyle === 'analog');
+      // The dial's own hub (#wwDialCenter) carries the digital time and
+      // current conditions whenever the dial is shown, so this line under
+      // the dial would just repeat them - hide it for both analog styles.
+      clockEl.classList.toggle('ww-digital-hidden', analogClock);
+      var dialTimeEl = document.getElementById('wwDialTime');
 
       var drawClock = function () {
         var now = new Date();
-        timeEl.textContent = now.toLocaleTimeString(BCP47, { hour: 'numeric', minute: '2-digit' });
+        var t = now.toLocaleTimeString(BCP47, { hour: 'numeric', minute: '2-digit' });
+        timeEl.textContent = t;
         dateEl.textContent = now.toLocaleDateString(BCP47, { weekday: 'short', month: 'short', day: 'numeric' });
+        if (dialTimeEl) dialTimeEl.textContent = t;
         setTimeout(drawClock, (61 - now.getSeconds()) * 1000);
       };
       drawClock();
@@ -6137,20 +6147,47 @@
         return e;
       }
 
+      // A tapered lance/spade silhouette (narrow tail counterweight past the
+      // hub, a shoulder bulge, a point at the tip) instead of a bare stroked
+      // line - "hands", not "needles". Grouped in a <g> (with an optional
+      // round tail counterweight, seconds-hand style) so the whole shape
+      // rotates as one unit; still pivots on the dial centre via the
+      // .ww-hand transform-origin, since it's just a shape in the 200x200
+      // view-box.
+      function lanceHand(tipY, tailY, shoulderInset, shoulderW, tailW, cls, tailR) {
+        var shoulderY = 100 - (100 - tipY) * shoulderInset;
+        var pts = [
+          [100 - tailW, tailY], [100 - shoulderW, shoulderY], [100, tipY],
+          [100 + shoulderW, shoulderY], [100 + tailW, tailY],
+        ].map(function (p) { return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ');
+        var g = mk('g', { class: 'ww-hand ' + cls });
+        g.appendChild(mk('polygon', { points: pts }));
+        if (tailR) g.appendChild(mk('circle', { cx: 100, cy: tailY - 2, r: tailR }));
+        return g;
+      }
+
       // --- static face: rim, hour ticks, hands, hub ---
       faceEl.textContent = '';
       faceEl.appendChild(mk('circle', { cx: 100, cy: 100, r: 96, class: 'ww-dial-rim' }));
+      var ticksByPos = {};
       for (var ti = 0; ti < positions; ti++) {
         var ta = (ti / positions) * 2 * Math.PI;
         var major = (positions === 24) ? (ti % 2 === 0) : true;
-        faceEl.appendChild(mk('line', {
+        // ti=0 is 12 o'clock (top), matching the rim birds' `pos` numbering
+        // (1..positions, pos===positions at the top) - see clockPosOfHour.
+        var tickPos = ((ti + positions - 1) % positions) + 1;
+        var tick = mk('line', {
           x1: 100 + Math.sin(ta) * (major ? 87 : 90), y1: 100 - Math.cos(ta) * (major ? 87 : 90),
           x2: 100 + Math.sin(ta) * 94, y2: 100 - Math.cos(ta) * 94, class: 'ww-dial-tick',
-        }));
+        });
+        ticksByPos[tickPos] = tick;
+        faceEl.appendChild(tick);
       }
-      var hHand = mk('line', { x1: 100, y1: 108, x2: 100, y2: 48, class: 'ww-hand ww-hand-h' });
-      var mHand = mk('line', { x1: 100, y1: 110, x2: 100, y2: 28, class: 'ww-hand ww-hand-m' });
-      var sHand = mk('line', { x1: 100, y1: 116, x2: 100, y2: 22, class: 'ww-hand ww-hand-s' });
+      var hHand = lanceHand(48, 108, 0.22, 5, 1.8, 'ww-hand-h');
+      var mHand = lanceHand(28, 112, 0.18, 4, 1.5, 'ww-hand-m');
+      // Second hand: a slender needle plus the small round tail
+      // counterweight real sweep-second hands carry.
+      var sHand = lanceHand(22, 116, 0.08, 1.4, 0.7, 'ww-hand-s', 3);
       faceEl.appendChild(hHand);
       faceEl.appendChild(mHand);
       if (wantSeconds) faceEl.appendChild(sHand);
@@ -6190,6 +6227,15 @@
       }
       function renderRim() {
         birdsEl.textContent = '';
+        // An hour position with a bird illustration doesn't need its tick
+        // mark too - the bird itself is the landmark. Ticks stay in the DOM
+        // either way (just hidden) so a reassignment can bring them back.
+        for (var tp = 1; tp <= positions; tp++) {
+          var tick = ticksByPos[tp];
+          if (!tick) continue;
+          var hasBird = wantBirds && assignment[tp] && assignment[tp].species;
+          tick.classList.toggle('is-bird-here', !!hasBird);
+        }
         if (wantBirds) {
           for (var pos = 1; pos <= positions; pos++) {
             var a = assignment[pos];
@@ -6367,6 +6413,7 @@
       var condEl = document.getElementById('wwCond');
       var sunEl = document.getElementById('wwSun');
       var fcEl = document.getElementById('wwForecast');
+      var dialWxEl = document.getElementById('wwDialWx');
       // Daily forecast: 0 = off (unchanged behaviour). Only the HA source
       // paths (injected hass / long-lived token) can serve it - it needs
       // the weather.get_forecasts service; BirdNET-Go's /weather/latest
@@ -6444,12 +6491,21 @@
       };
       var paintWeather = function (temp, cond, rise, set) {
         if (typeof temp !== 'number' || isNaN(temp)) return;
-        tempEl.textContent = Math.round(temp) + '\u00b0';
-        condEl.textContent = (cond || '').toLowerCase();
+        var tempTxt = Math.round(temp) + '\u00b0';
+        var condTxt = (cond || '').toLowerCase();
+        tempEl.textContent = tempTxt;
+        condEl.textContent = condTxt;
         sunEl.textContent = (rise && set) ? ('sun ' + rise + ' \u2013 ' + set) : '';
         wxEl.hidden = false;
         var rule = document.getElementById('wwRule');
         if (rule && showClock) rule.hidden = false;
+        // The analog dial's hub carries current conditions itself
+        // (#wwDialCenter) - stop repeating temp/condition out here once
+        // it's showing; sunrise/sunset and the forecast row stay outside,
+        // they don't fit in the hub.
+        if (dialWxEl) dialWxEl.textContent = [tempTxt, condTxt].filter(Boolean).join(' ');
+        tempEl.hidden = !!analogClock;
+        condEl.hidden = !!analogClock;
         repackIfGrown();
       };
 

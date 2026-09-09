@@ -1671,9 +1671,17 @@ body.av-local #dd-items  { display: block; }
 .wall-widgets[data-corner="bottom-left"]  { left: 36px;  bottom: 96px; align-items: flex-start; text-align: left; }
 .wall-widgets[data-corner="top-right"]    { right: 36px; top: 14px;    align-items: flex-end; text-align: right; }
 .wall-widgets[data-corner="top-left"]     { left: 36px;  top: 14px;    align-items: flex-start; text-align: left; }
+/* Main-widget placement: dead centre of the collage, flock ringing it (the
+   round dial is already an elliptical packing obstacle, so birds nest into
+   its bounding-box corners for free - see addObstacle/ellipse in apt.js). */
+.wall-widgets[data-corner="center"] {
+  left: 50%; top: 50%; transform: translate(-50%, -50%);
+  align-items: center; text-align: center;
+}
 .ww-block { display: flex; flex-direction: column; gap: 3px; }
 .wall-widgets[data-corner$="right"] .ww-block { align-items: flex-end; }
 .wall-widgets[data-corner$="left"] .ww-block { align-items: flex-start; }
+.wall-widgets[data-corner="center"] .ww-block { align-items: center; }
 .ww-block[hidden] { display: none; }
 .ww-big {
   font: 600 clamp(26px, 3vw, 40px)/1 var(--av-font-display);
@@ -1697,6 +1705,7 @@ body.av-local #dd-items  { display: block; }
 .ww-forecast[hidden], .ww-forecast:empty { display: none; }
 .wall-widgets[data-corner$="right"] .ww-forecast { justify-content: flex-end; }
 .wall-widgets[data-corner$="left"] .ww-forecast { justify-content: flex-start; }
+.wall-widgets[data-corner="center"] .ww-forecast { justify-content: center; }
 .ww-fc-day {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   font: 9px/1.35 var(--av-font-mono);
@@ -1714,28 +1723,43 @@ body.av-local #dd-items  { display: block; }
   position: relative;
   width: var(--ww-dial-size, 184px);
   height: var(--ww-dial-size, 184px);
+  /* Rim bird thumbnails scale with the dial, so a huge centred main-widget
+     dial doesn't leave them looking like an afterthought. */
+  --ww-dial-bird-size: calc(var(--ww-dial-size, 184px) * 0.155);
 }
 .ww-dial[hidden] { display: none; }
+/* Main-widget placement: the dial IS the display's centrepiece, so it gets
+   a lot more room - clamped between a sane floor and a ceiling that still
+   leaves the flock somewhere to stand in the corners of the viewport. */
+.wall-widgets[data-corner="center"] .ww-dial {
+  --ww-dial-size: clamp(240px, 42vmin, 560px);
+}
 /* clock_style: analog drops the digital time/date line (real Audubon
-   clocks have no digits); clock_style: both keeps it under the dial. */
+   clocks have no digits); the time + current conditions now live in the
+   dial's own hub (#wwDialCenter) whenever the dial is shown, so
+   clock_style: both hides this line too rather than repeating them. */
 .ww-block.ww-digital-hidden .ww-big,
 .ww-block.ww-digital-hidden .ww-cap { display: none; }
 .ww-dial-face { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .ww-dial-rim { fill: none; stroke: var(--hairline); stroke-width: 1.5; }
 .ww-dial-tick { stroke: var(--ink-soft); stroke-width: 1.5; opacity: 0.7; }
+/* Hidden, not removed, when that hour's rim position already carries a
+   bird illustration - one landmark per hour, not two. */
+.ww-dial-tick.is-bird-here { display: none; }
 .ww-dial-hub { fill: var(--ink); }
+/* Hands are filled lance/spade silhouettes (tapered shoulder + point, plus
+   a small tail counterweight past the hub) rather than a bare stroked
+   line - rotation still pivots on the dial centre via transform-origin. */
 .ww-hand {
-  stroke: var(--ink); stroke-linecap: round;
+  fill: var(--ink); stroke: none;
   transform-box: view-box; transform-origin: 100px 100px;
 }
-.ww-hand-h { stroke-width: 4; }
-.ww-hand-m { stroke-width: 3; }
-.ww-hand-s { stroke-width: 1.5; stroke: var(--accent, #b23b3b); }
+.ww-hand-s { fill: var(--accent, #b23b3b); }
 .ww-dial-birds { position: absolute; inset: 0; }
 .ww-dial-bird {
   position: absolute;
-  width: 28px; height: 28px;
-  margin: -14px 0 0 -14px;      /* centre on the computed left/top */
+  width: var(--ww-dial-bird-size, 28px); height: var(--ww-dial-bird-size, 28px);
+  margin: calc(var(--ww-dial-bird-size, 28px) / -2) 0 0 calc(var(--ww-dial-bird-size, 28px) / -2);
   object-fit: contain;
   opacity: 0.92;
   transition: opacity 0.2s, transform 0.2s;
@@ -1743,6 +1767,31 @@ body.av-local #dd-items  { display: block; }
 }
 .ww-dial-bird.is-dim { opacity: 0.4; }
 .ww-dial-bird.is-active { opacity: 1; transform: scale(1.3); }
+/* Digital time + current conditions, in the dial's hub - drawn over the
+   hands/hub (later in source order) on a small paper-coloured medallion so
+   it stays legible wherever the hands happen to point. */
+.ww-dial-center {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  width: 46%; aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  padding: 4%;
+  pointer-events: none;
+}
+.ww-dial-time {
+  font: 600 clamp(13px, calc(var(--ww-dial-size, 184px) * 0.12), 34px)/1 var(--av-font-display);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+.ww-dial-wx {
+  font: clamp(7px, calc(var(--ww-dial-size, 184px) * 0.045), 12px)/1.3 var(--av-font-mono);
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.ww-dial-wx:empty { display: none; }
 /* Active / hovered hour's species - a caption line under the dial. One
    line always (ellipsis), so a hover swap never reflows the widget box. */
 .ww-dial-name {

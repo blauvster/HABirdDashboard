@@ -78,6 +78,14 @@
           <div class="ww-dial" id="wwDial" hidden>
             <svg class="ww-dial-face" id="wwDialFace" viewBox="0 0 200 200" aria-hidden="true"></svg>
             <div class="ww-dial-birds" id="wwDialBirds"></div>
+            <!-- Digital time + current conditions, riding in the dial's own
+                 hub instead of a separate line below it - apt.js keeps this
+                 in sync with #wwTime/#wwTemp/#wwCond and hides those once
+                 the dial is showing. -->
+            <div class="ww-dial-center" id="wwDialCenter">
+              <span class="ww-dial-time" id="wwDialTime">--:--</span>
+              <span class="ww-dial-wx" id="wwDialWx"></span>
+            </div>
             <!-- Browser autoplay lock: shown until a user gesture unlocks
                  audio, so a kiosk wall never sits silently "broken". Only
                  with clock_chime + browser output. -->

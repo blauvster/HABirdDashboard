@@ -292,6 +292,7 @@ var HABIRD_EDITOR_SCHEMA = [
         { value: 'bottom-left', label: 'Bottom left' },
         { value: 'top-right', label: 'Top right' },
         { value: 'top-left', label: 'Top left' },
+        { value: 'center', label: 'Center (main widget)' },
       ] } } },
       { name: 'weather', selector: { boolean: {} } },
       { name: 'weather_entity', selector: { entity: { domain: 'weather' } } },

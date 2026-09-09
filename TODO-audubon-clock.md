@@ -375,3 +375,10 @@ sizing, `time/hourly/batch` shape, and mixed-content behaviour.
    (real Audubon clocks have no digits). `clock_style: both` is the opt-in for
    users who want the digital block beneath the dial. `digital` stays the
    default so existing users are unaffected.
+   *Superseded 2026-09-09:* the dial became the intended main widget
+   (`corner: center`), so the digital time + current conditions moved into
+   the dial's own hub (`#wwDialCenter`) instead of a line below it —
+   `clock_style: both` now shares that same hub rather than repeating them
+   underneath. Hands are tapered lance shapes, not bare lines, and a rim
+   position with a bird illustration drops its tick mark (one landmark per
+   hour, not two).

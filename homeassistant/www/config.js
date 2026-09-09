@@ -211,7 +211,10 @@ window.AV_CONFIG = {
   wall: {
     clock: false,          // time + date
     weather: false,        // current conditions + sunrise/sunset
-    corner: 'bottom-right', // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+    corner: 'bottom-right', // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
+                            //   ('center' makes it the display's main widget,
+                            //   flock ringing it - pairs well with clockStyle
+                            //   'analog' and a full-screen/panel display)
     hideCursor: false,     // hide the mouse cursor after 8s idle (kiosks)
 
     // Audubon "singing bird clock" dial. clockStyle 'analog' swaps the

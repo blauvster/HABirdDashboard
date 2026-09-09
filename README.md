@@ -288,6 +288,9 @@ calendar_week_start: sunday  # sunday | monday
 agenda_days_ahead: 7         # agenda horizon
 agenda_max_events: 6         # agenda length
 corner: bottom-right         # where the clock/weather/calendar block lives
+                             #   (top-left | top-right | bottom-left |
+                             #   bottom-right | center - center makes it
+                             #   the display's main widget, flock ringing it)
 hide_cursor: false           # hide the pointer after 8s idle (wall displays)
 image_base: ""               # empty = artwork from CDN (see below)
 visits_sensors: []           # feeder-camera sensors - blends per-species
@@ -339,12 +342,26 @@ an analog dial with a bird illustration at each hour. Each hour's bird is
 the one most *characteristic* of that hour in your own detection history -
 not just the loudest bird overall - solved as a one-to-one matching so no
 species lands on two hours; an hour with no detections borrows the best
-bird from its nearest neighbour (shown dimmed). The assignment is computed
+bird from its nearest neighbour (shown dimmed, and its rim position keeps
+its tick mark since there's no bird to mark it with - every other position
+drops the tick in favour of the bird itself). The assignment is computed
 over `clock_window_days` (default 30), recomputed on the `clock_reassign`
 cadence, and persisted with hysteresis so it only reshuffles when a
 challenger clearly beats the incumbent. `clock_hours: 24` gives distinct
 dawn and dusk birds; `hour_birds: { 7: Turdus migratorius }` pins one.
-Tapping a rim bird plays its call and follows `tap_action`.
+Tapping a rim bird plays its call and follows `tap_action`. The hour and
+minute hands (and the sweeping second hand, `clock_seconds: true`) are
+tapered lance shapes, not bare lines. Digital time and current conditions
+ride together in the dial's own hub instead of a line underneath it -
+`clock_style: both` no longer repeats them below the dial, it's the same
+hub either way.
+
+Set **`corner: center`** to make the dial the display's centrepiece: it
+grows to fill most of the frame and sits dead-middle, with the flock
+scattering into the ring around it (the round dial is already an
+elliptical packing obstacle, so birds tuck into the corners of its
+bounding square for free). Pairs well with a full panel/dashboard view
+rather than a small sidebar card.
 
 With **`clock_chime: true`** the dial plays that hour's call on the hour,
 from static files you drop in `config/www/birdcalls/` (named by scientific
