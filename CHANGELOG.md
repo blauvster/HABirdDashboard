@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.6.0 — 2026-09-08
 
 ### Added
 - **Audubon "singing bird clock".** `clock_style: analog` (or `both`) swaps

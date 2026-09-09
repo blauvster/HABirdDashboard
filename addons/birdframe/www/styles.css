@@ -1687,6 +1687,151 @@ body.av-local #dd-items  { display: block; }
   color: var(--ink-soft);
 }
 .ww-cap:empty { display: none; }
+/* Daily forecast: a compact row of day columns under the current
+   conditions. Same mono micro-caption recipe; numerals in ink, the low
+   and the precip line softened. */
+.ww-forecast {
+  display: flex; gap: 12px; margin-top: 5px;
+  font-variant-numeric: tabular-nums;
+}
+.ww-forecast[hidden], .ww-forecast:empty { display: none; }
+.wall-widgets[data-corner$="right"] .ww-forecast { justify-content: flex-end; }
+.wall-widgets[data-corner$="left"] .ww-forecast { justify-content: flex-start; }
+.ww-fc-day {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font: 9px/1.35 var(--av-font-mono);
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.ww-fc-dow { color: var(--ink); font-weight: 600; }
+.ww-fc-ico { font-size: 12px; letter-spacing: 0; line-height: 1; }
+.ww-fc-hi { color: var(--ink); letter-spacing: 0.02em; }
+.ww-fc-lo { color: var(--ink-soft); letter-spacing: 0.02em; }
+.ww-fc-pop { letter-spacing: 0.02em; }
+.ww-fc-pop:empty, .ww-fc-ico:empty { display: none; }
+/* ---- Audubon analog dial (clock_style: analog | both) ---- */
+.ww-dial {
+  position: relative;
+  width: var(--ww-dial-size, 184px);
+  height: var(--ww-dial-size, 184px);
+}
+.ww-dial[hidden] { display: none; }
+/* clock_style: analog drops the digital time/date line (real Audubon
+   clocks have no digits); clock_style: both keeps it under the dial. */
+.ww-block.ww-digital-hidden .ww-big,
+.ww-block.ww-digital-hidden .ww-cap { display: none; }
+.ww-dial-face { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.ww-dial-rim { fill: none; stroke: var(--hairline); stroke-width: 1.5; }
+.ww-dial-tick { stroke: var(--ink-soft); stroke-width: 1.5; opacity: 0.7; }
+.ww-dial-hub { fill: var(--ink); }
+.ww-hand {
+  stroke: var(--ink); stroke-linecap: round;
+  transform-box: view-box; transform-origin: 100px 100px;
+}
+.ww-hand-h { stroke-width: 4; }
+.ww-hand-m { stroke-width: 3; }
+.ww-hand-s { stroke-width: 1.5; stroke: var(--accent, #b23b3b); }
+.ww-dial-birds { position: absolute; inset: 0; }
+.ww-dial-bird {
+  position: absolute;
+  width: 28px; height: 28px;
+  margin: -14px 0 0 -14px;      /* centre on the computed left/top */
+  object-fit: contain;
+  opacity: 0.92;
+  transition: opacity 0.2s, transform 0.2s;
+  pointer-events: auto; cursor: pointer;
+}
+.ww-dial-bird.is-dim { opacity: 0.4; }
+.ww-dial-bird.is-active { opacity: 1; transform: scale(1.3); }
+/* Active / hovered hour's species - a caption line under the dial. One
+   line always (ellipsis), so a hover swap never reflows the widget box. */
+.ww-dial-name {
+  align-self: center;
+  max-width: var(--ww-dial-size, 184px);
+  margin-top: 2px;
+  text-align: center;
+  font: 9px/1.3 var(--av-font-mono);
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--ink-soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ww-dial-name:empty { display: none; }
+/* Autoplay unlock: a compact chip across the lower third of the dial -
+   visible enough to invite a tap, but the clock still reads behind it. */
+.ww-chime-unlock {
+  position: absolute;
+  left: 8%; right: 8%; bottom: 12%;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--hairline); border-radius: 999px;
+  padding: 5px 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 8px/1.3 var(--av-font-mono);
+  letter-spacing: 0.1em; text-transform: uppercase;
+  text-align: center;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.18);
+}
+.ww-chime-unlock[hidden] { display: none; }
+/* ---- Calendar (calendar: true) ---- */
+.ww-calendar { gap: 6px; align-items: inherit; }
+.ww-calendar[hidden] { display: none; }
+.ww-cal-title {
+  font: 10px/1.3 var(--av-font-mono);
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.ww-cal-grid {
+  border-collapse: collapse;
+  font: 10px/1 var(--av-font-mono);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.ww-cal-grid th {
+  font-weight: 400; color: var(--ink-soft);
+  padding: 2px 0 4px; text-transform: uppercase; letter-spacing: 0.08em;
+}
+.ww-cal-grid td {
+  width: 20px; height: 18px; text-align: center;
+  padding: 2px 0; color: var(--ink);
+}
+.ww-cal-grid td.is-out { color: var(--ink-soft); opacity: 0.45; }
+.ww-cal-grid td.is-today {
+  color: var(--paper); background: var(--ink);
+  border-radius: 50%;
+}
+.ww-cal-grid td.has-ev { position: relative; }
+.ww-cal-grid td.has-ev::after {
+  content: ""; position: absolute; left: 50%; bottom: 1px;
+  width: 3px; height: 3px; margin-left: -1.5px;
+  border-radius: 50%; background: var(--accent, #b23b3b);
+}
+.ww-cal-grid td.is-today.has-ev::after { background: var(--paper); }
+.ww-cal-agenda {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.ww-cal-agenda li {
+  display: flex; gap: 8px;
+  font: 9.5px/1.35 var(--av-font-mono);
+}
+.ww-cal-when {
+  flex: none; color: var(--ink-soft);
+  letter-spacing: 0.06em; text-transform: uppercase;
+  white-space: nowrap;
+}
+.ww-cal-what {
+  color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wall-widgets[data-corner$="right"] .ww-cal-agenda li { flex-direction: row-reverse; }
+.wall-widgets[data-corner$="right"] .ww-cal-what { text-align: right; }
+.ww-cal-empty {
+  font: 9.5px/1.35 var(--av-font-mono);
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-soft);
+}
 .ww-rule {
   width: 44px; height: 1px;
   background: var(--hairline);
@@ -1701,6 +1846,9 @@ body.av-local #dd-items  { display: block; }
   .ww-cap { font-size: 8px; letter-spacing: 0.1em; }
   /* The sunrise/sunset caption is the first thing to go on a phone. */
   #wwSun { display: none; }
+  .ww-forecast { gap: 8px; }
+  .ww-fc-day { font-size: 8px; letter-spacing: 0.08em; }
+  .ww-fc-ico { font-size: 10px; }
 }
 /* Kiosk cursor hiding - applied to <body> by apt.js after idle when the
    wall options ask for it. */

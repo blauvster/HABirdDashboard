@@ -180,6 +180,15 @@
   'weather.windy': 'windy',
   'weather.windy-variant': 'windy',
 
+  // ---- Calendar (wall widget) ----
+  'cal.today': 'Today',
+  'cal.tomorrow': 'Tomorrow',
+  'cal.none': 'Nothing coming up',
+  'cal.allDay': 'all day',
+
+  // ---- Audubon clock ----
+  'clock.enableChimes': 'tap to enable chimes',
+
   // ---- About modal ----
   'about.title': 'The birds outside your window',
   // Rich string (assigned via innerHTML - static, trusted markup).

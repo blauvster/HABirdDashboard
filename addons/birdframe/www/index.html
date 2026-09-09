@@ -72,6 +72,21 @@
            renderCollage clears the collage's innerHTML on every pass. -->
       <div class="wall-widgets" id="wallWidgets" data-corner="bottom-right" hidden>
         <div class="ww-block" id="wwClock" hidden>
+          <!-- Audubon analog dial (clock_style: analog | both). Face + hands
+               are SVG built by apt.js; the rim bird thumbnails are absolutely
+               positioned <img>s over it. Hidden for the default digital style. -->
+          <div class="ww-dial" id="wwDial" hidden>
+            <svg class="ww-dial-face" id="wwDialFace" viewBox="0 0 200 200" aria-hidden="true"></svg>
+            <div class="ww-dial-birds" id="wwDialBirds"></div>
+            <!-- Browser autoplay lock: shown until a user gesture unlocks
+                 audio, so a kiosk wall never sits silently "broken". Only
+                 with clock_chime + browser output. -->
+            <button type="button" class="ww-chime-unlock" id="wwChimeUnlock" hidden
+                    data-i18n="clock.enableChimes">tap to enable chimes</button>
+          </div>
+          <!-- Active / hovered hour's species (below the dial so it never
+               overlaps the rim birds). -->
+          <div class="ww-dial-name" id="wwDialName" aria-live="polite"></div>
           <span class="ww-big" id="wwTime">--:--</span>
           <span class="ww-cap" id="wwDate"></span>
         </div>
@@ -80,7 +95,15 @@
           <span class="ww-big" id="wwTemp"></span>
           <span class="ww-cap" id="wwCond"></span>
           <span class="ww-cap" id="wwSun"></span>
+          <!-- Daily forecast columns (high/low + precip), one per day.
+               Filled by apt.js only when forecast_days > 0 and an HA
+               weather entity is available; stays empty otherwise. -->
+          <div class="ww-forecast" id="wwForecast" hidden aria-hidden="true"></div>
         </div>
+        <!-- Calendar (calendar: true): month grid and/or agenda from HA's
+             calendar.get_events. Built by apt.js; empty without hass/token
+             or configured calendar entities. -->
+        <div class="ww-block ww-calendar" id="wwCalendar" hidden></div>
       </div>
       <!-- Optional species-name strip (issue #69): every species in the
            current window as a line of names along the bottom of the
