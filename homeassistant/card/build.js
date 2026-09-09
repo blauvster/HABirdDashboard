@@ -231,7 +231,7 @@ const wrapper = `
 // you copied the artwork locally (homeassistant/install.sh layout).
 var HABIRD_CDN_ASSETS = 'https://cdn.jsdelivr.net/gh/adamoberley/HABirdDashboard@HABirdDashboard/avian/assets/';
 
-var HABIRD_VERSION = '1.6.0';
+var HABIRD_VERSION = '1.6.1';
 
 var HABIRD_EDITOR_SCHEMA = [
   { name: 'dashboard', type: 'expandable', flatten: true, title: 'Dashboard', expanded: true, schema: [
@@ -258,6 +258,10 @@ var HABIRD_EDITOR_SCHEMA = [
     { name: '', type: 'grid', schema: [
       { name: 'paper_color', selector: { text: {} } },
       { name: 'paper_color_dark', selector: { text: {} } },
+    ] },
+    { name: '', type: 'grid', schema: [
+      { name: 'ink_color', selector: { text: {} } },
+      { name: 'ink_color_dark', selector: { text: {} } },
     ] },
     { name: '', type: 'grid', schema: [
       { name: 'window', selector: { select: { mode: 'dropdown', options: [
@@ -413,6 +417,8 @@ var HABIRD_LABELS = {
   size_contrast: 'Size contrast',
   paper_color: 'Paper color (light)',
   paper_color_dark: 'Paper color (dark)',
+  ink_color: 'Ink color (light)',
+  ink_color_dark: 'Ink color (dark)',
   paper_texture: 'Paper texture',
   collage_shape: 'Collage shape',
   collage_hole: 'Ring centre size',
@@ -464,6 +470,8 @@ var HABIRD_HELPERS = {
   size_contrast: 'How much bigger your most-heard birds are drawn than the rest. Lower keeps every bird closer to the same size; 0 makes them all essentially the same size; higher lets the loudest few dominate.',
   paper_color: 'With Background: Paper, the page colour in light mode (hex, e.g. #f0e8d5). Blank uses the theme default (near-white).',
   paper_color_dark: 'With Background: Paper, the page colour in dark mode (hex, e.g. #15120d). Blank uses the theme default (charcoal).',
+  ink_color: 'Text/foreground colour in light mode (hex). Blank: a custom Paper color gets an automatic near-black or near-white that contrasts it - set this only to force a specific shade.',
+  ink_color_dark: 'Text/foreground colour in dark mode (hex). Blank: a custom Paper color (dark) gets an automatic contrasting ink - set this only to force a specific shade.',
   paper_texture: 'With Background: Paper, a faint paper grain over the background (0 = off, ~0.06 = subtle), so it reads like a print on washi rather than flat colour.',
   collage_shape: 'Cluster packs one filled flock from the centre out; ring opens the middle into a halo of birds in flight.',
   collage_hole: 'Ring shape only: how big the open centre is, as a fraction of the card. Bigger = a wider gap and a thinner band of birds.',
@@ -631,6 +639,8 @@ class HABirdCard extends HTMLElement {
       // (with a transparent card the collage sits on the dashboard).
       paperColor: c.paper_color || '',
       paperColorDark: c.paper_color_dark || '',
+      inkColor: c.ink_color || '',
+      inkColorDark: c.ink_color_dark || '',
       paperTexture: (typeof c.paper_texture === 'number') ? c.paper_texture : 0,
       paperBg: (c.background || 'transparent') === 'paper',
       // Collage shape: 'cluster' (default filled blob) or 'ring' (open
@@ -741,7 +751,7 @@ class HABirdCardEditor extends HTMLElement {
       this.appendChild(this._form);
     }
     this._form.schema = HABIRD_EDITOR_SCHEMA;
-    this._form.data = Object.assign({ corner: 'bottom-right', sit_confidence: 0.90, window: '24', background: 'transparent', font: 'system', data_source: 'auto', view: 'collage', view_selector: true, selector_position: 'bottom', names: 'off', names_size: 13, collage_fill: 0.5, size_contrast: 0.5, paper_color: '', paper_color_dark: '', paper_texture: 0, audio_boost: 24, live: true }, this._config);
+    this._form.data = Object.assign({ corner: 'bottom-right', sit_confidence: 0.90, window: '24', background: 'transparent', font: 'system', data_source: 'auto', view: 'collage', view_selector: true, selector_position: 'bottom', names: 'off', names_size: 13, collage_fill: 0.5, size_contrast: 0.5, paper_color: '', paper_color_dark: '', ink_color: '', ink_color_dark: '', paper_texture: 0, audio_boost: 24, live: true }, this._config);
     this._form.hass = this._hass;
   }
 }

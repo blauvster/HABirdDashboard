@@ -170,6 +170,13 @@ window.AV_CONFIG = {
   paperColor: '',       // light theme
   paperColorDark: '',   // dark theme
 
+  // Foreground (ink) colour, per theme (hex). Left '', a custom paperColor
+  // gets an automatic near-black or near-white ink - whichever contrasts the
+  // ground. Set these only to force a specific shade (e.g. a warm brown ink
+  // on cream). Ignored unless the matching paperColor is also set.
+  inkColor: '',         // light theme
+  inkColorDark: '',     // dark theme
+
   // Paper grain: a faint grayscale noise laid over the background so it looks
   // like a print on washi/canvas rather than flat colour. 0 = off, ~0.06 is a
   // gentle grain, higher is coarser.

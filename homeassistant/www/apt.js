@@ -1987,10 +1987,67 @@
   // like a print on washi rather than flat colour. Blank colour / 0 texture
   // leaves the theme's default --paper untouched. The colour is re-applied
   // whenever data-theme flips (OS scheme on the page, HA dark mode on the card).
+  //
+  // A custom --paper also has to drag the foreground with it: the whole UI
+  // paints in var(--ink) / var(--ink-soft) etc., and a paper_color that fights
+  // the active theme (a light cream set as paper_color_dark, say) would leave
+  // light ink on a light ground. So when a paper colour is set we swap in
+  // whichever of the two built-in palettes (dark ink for a light ground, light
+  // ink for a dark one) contrasts it, judged by the colour's relative
+  // luminance. inkColor / inkColorDark override the ink outright when the
+  // computed near-black / near-white isn't the wanted shade.
+  function _hex6(v) {
+    var c = String(v == null ? '' : v).trim().replace(/^#/, '');
+    if (c.length === 3) c = c[0] + c[0] + c[1] + c[1] + c[2] + c[2];
+    return /^[0-9a-fA-F]{6}$/.test(c) ? c : '';
+  }
+  function _relLum(hex6) {
+    var f = function (n) { var v = parseInt(hex6.substr(n, 2), 16) / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(0) + 0.7152 * f(2) + 0.0722 * f(4);
+  }
+  // The bare :root and :root[data-theme="dark"] palettes from styles.css,
+  // minus --paper itself (set separately to the custom colour). --paper-2/-3
+  // are re-derived from the custom ground so the recessed tracks track it.
+  var _INK_ON_LIGHT = {
+    '--ink': '#1a1612', '--ink-2': '#4a3f31', '--ink-soft': '#908576',
+    '--accent': '#4a3f31', '--accent-2': '#1a1612',
+    '--hairline': 'rgba(26,22,18,0.14)', '--pill': '#fcfcfb',
+    '--paper-2': 'color-mix(in srgb, var(--paper) 94%, #000)',
+    '--paper-3': 'color-mix(in srgb, var(--paper) 86%, #000)',
+    '--edge': 'inset 0 0 0 1px rgba(255,255,255,0.55), 0 0 0 1px rgba(26,22,18,0.04)',
+    '--edge-lg': 'inset 0 0 0 1px rgba(255,255,255,0.6), 0 0 0 1px rgba(26,22,18,0.06), 0 8px 28px rgba(26,22,18,0.06)',
+    '--recess': 'inset 0 1px 2px rgba(26,22,18,0.06), inset 0 0 0 1px rgba(26,22,18,0.04)',
+    '--raised': 'inset 0 0 0 1px rgba(255,255,255,0.8), 0 0 0 1px rgba(26,22,18,0.05), 0 1px 2px rgba(26,22,18,0.07)',
+  };
+  var _INK_ON_DARK = {
+    '--ink': '#ece8e1', '--ink-2': '#b7afa2', '--ink-soft': '#837c70',
+    '--accent': '#d8d2c6', '--accent-2': '#ece8e1',
+    '--hairline': 'rgba(236,232,225,0.20)', '--pill': '#404040',
+    '--paper-2': 'color-mix(in srgb, var(--paper) 88%, #fff)',
+    '--paper-3': 'color-mix(in srgb, var(--paper) 78%, #fff)',
+    '--edge': 'inset 0 0 0 1px rgba(255,255,255,0.05), 0 0 0 1px rgba(0,0,0,0.4)',
+    '--edge-lg': 'inset 0 0 0 1px rgba(255,255,255,0.06), 0 0 0 1px rgba(0,0,0,0.5), 0 10px 30px rgba(0,0,0,0.5)',
+    '--recess': 'inset 0 1px 2px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.04)',
+    '--raised': 'inset 0 0 0 1px rgba(255,255,255,0.07), 0 0 0 1px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.5)',
+  };
+  var _PAPER_VARS = ['--paper', '--ink', '--ink-2', '--ink-soft', '--accent', '--accent-2',
+    '--hairline', '--pill', '--paper-2', '--paper-3', '--edge', '--edge-lg', '--recess', '--raised'];
   function applyPaperColour() {
-    var pc = (currentTheme() === 'dark') ? AV_CFG.paperColorDark : AV_CFG.paperColor;
-    if (pc) document.documentElement.style.setProperty('--paper', pc);
-    else document.documentElement.style.removeProperty('--paper');
+    var s = document.documentElement.style;
+    var dark = currentTheme() === 'dark';
+    var pc = _hex6(dark ? AV_CFG.paperColorDark : AV_CFG.paperColor);
+    if (!pc) { _PAPER_VARS.forEach(function (v) { s.removeProperty(v); }); return; }
+    s.setProperty('--paper', '#' + pc);
+    var pal = _relLum(pc) < 0.22 ? _INK_ON_DARK : _INK_ON_LIGHT;
+    Object.keys(pal).forEach(function (v) { s.setProperty(v, pal[v]); });
+    var ink = _hex6(dark ? AV_CFG.inkColorDark : AV_CFG.inkColor);
+    if (ink) {
+      ink = '#' + ink;
+      s.setProperty('--ink', ink);
+      s.setProperty('--ink-2', 'color-mix(in srgb, ' + ink + ' 78%, var(--paper))');
+      s.setProperty('--ink-soft', 'color-mix(in srgb, ' + ink + ' 52%, var(--paper))');
+      s.setProperty('--accent-2', ink);
+    }
   }
   applyPaperColour();
   if (window.MutationObserver) {

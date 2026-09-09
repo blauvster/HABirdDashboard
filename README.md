@@ -240,6 +240,8 @@ window: "24"                 # time window in hours, or "all" - the card has
 background: transparent      # transparent (blend with dashboard) | paper
 paper_color: ""              # background: paper - light-mode page colour (hex); "" = theme default
 paper_color_dark: ""         # background: paper - dark-mode page colour (hex); "" = theme default
+ink_color: ""                # text colour (hex); "" = auto-contrast against paper_color
+ink_color_dark: ""           # text colour, dark mode (hex); "" = auto-contrast against paper_color_dark
 paper_texture: 0             # background: paper - faint paper grain (0 = off, ~0.06 = subtle washi)
 font: system                 # system (HA's font) | serif (the original look)
 language: ""                 # UI language override, e.g. "da" - empty = follow

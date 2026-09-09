@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.6.1 — 2026-09-08
+
+### Fixed
+- **A custom `paper_color` now carries the foreground with it.** Setting
+  `paper_color` / `paper_color_dark` only moved the `--paper` ground - the
+  text kept the active theme's ink, so a colour that fought the theme (a
+  light cream set as `paper_color_dark`, say) left light ink on a light
+  ground, including the detail modal. The card now swaps in whichever
+  built-in palette (dark ink or light ink) contrasts the chosen ground,
+  judged by its relative luminance, and re-derives the recessed
+  `--paper-2` / `--paper-3` tracks from it.
+
+### Added
+- **`ink_color` / `ink_color_dark`.** An explicit foreground hex per
+  theme, for when the auto-contrast ink isn't the wanted shade (a warm
+  brown on cream, say). Blank keeps the automatic behaviour. Card YAML +
+  visual editor; `inkColor` / `inkColorDark` in `config.js` on the
+  standalone page.
+
 ## v1.6.0 — 2026-09-08
 
 ### Added
