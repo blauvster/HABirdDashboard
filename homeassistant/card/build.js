@@ -231,7 +231,7 @@ const wrapper = `
 // you copied the artwork locally (homeassistant/install.sh layout).
 var HABIRD_CDN_ASSETS = 'https://cdn.jsdelivr.net/gh/adamoberley/HABirdDashboard@HABirdDashboard/avian/assets/';
 
-var HABIRD_VERSION = '1.6.1';
+var HABIRD_VERSION = '1.7.0';
 
 var HABIRD_EDITOR_SCHEMA = [
   { name: 'dashboard', type: 'expandable', flatten: true, title: 'Dashboard', expanded: true, schema: [
@@ -292,7 +292,7 @@ var HABIRD_EDITOR_SCHEMA = [
         { value: 'bottom-left', label: 'Bottom left' },
         { value: 'top-right', label: 'Top right' },
         { value: 'top-left', label: 'Top left' },
-        { value: 'center', label: 'Center (main widget)' },
+        { value: 'center', label: 'Center' },
       ] } } },
       { name: 'weather', selector: { boolean: {} } },
       { name: 'weather_entity', selector: { entity: { domain: 'weather' } } },
@@ -331,9 +331,16 @@ var HABIRD_EDITOR_SCHEMA = [
   { name: 'audubon', type: 'expandable', flatten: true, title: 'Audubon clock', schema: [
     { name: 'clock_style', selector: { select: { mode: 'dropdown', options: [
       { value: 'digital', label: 'Digital (default)' },
-      { value: 'analog', label: 'Analog dial only' },
-      { value: 'both', label: 'Analog dial + digital line' },
+      { value: 'analog', label: 'Analog dial only (no digits)' },
+      { value: 'both', label: 'Analog dial + digital readout' },
     ] } } },
+    { name: '', type: 'grid', schema: [
+      { name: 'clock_placement', selector: { select: { mode: 'dropdown', options: [
+        { value: 'grouped', label: 'Grouped with weather/calendar' },
+        { value: 'main', label: 'Centered, main widget' },
+      ] } } },
+      { name: 'clock_size', selector: { text: {} } },
+    ] },
     { name: '', type: 'grid', schema: [
       { name: 'clock_birds', selector: { boolean: {} } },
       { name: 'clock_seconds', selector: { boolean: {} } },
@@ -351,15 +358,9 @@ var HABIRD_EDITOR_SCHEMA = [
     ] },
     { name: 'clock_chime', selector: { boolean: {} } },
     { name: '', type: 'grid', schema: [
-      { name: 'clock_chime_output', selector: { select: { mode: 'dropdown', options: [
-        { value: 'browser', label: 'Browser (tap to unlock)' },
-        { value: 'media_player', label: 'HA media player' },
-      ] } } },
       { name: 'clock_chime_media_player', selector: { entity: { domain: 'media_player' } } },
       { name: 'clock_chime_quiet_hours', selector: { text: {} } },
-      { name: 'clock_chime_volume', selector: { number: { min: 0, max: 1, step: 0.05, mode: 'slider' } } },
     ] },
-    { name: 'clock_call_base', selector: { text: {} } },
   ] },
   { name: 'calendar_group', type: 'expandable', flatten: true, title: 'Calendar', schema: [
     { name: 'calendar', selector: { boolean: {} } },
@@ -408,7 +409,7 @@ var HABIRD_LABELS = {
   weather: 'Weather',
   weather_entity: 'Weather entity',
   forecast_days: 'Forecast days',
-  corner: 'Corner',
+  corner: 'Weather/calendar corner',
   hide_cursor: 'Hide idle cursor',
   sit_confidence: 'Sit confidence',
   audio_boost: 'Recording volume boost',
@@ -435,6 +436,8 @@ var HABIRD_LABELS = {
   live: 'Live updates',
   visits_sensors: 'Feeder visit sensors',
   clock_style: 'Clock style',
+  clock_placement: 'Clock placement',
+  clock_size: 'Dial size',
   clock_birds: 'Hour birds',
   clock_seconds: 'Second hand',
   clock_hours: 'Hour positions',
@@ -442,11 +445,8 @@ var HABIRD_LABELS = {
   clock_window_days: 'Assignment window',
   clock_min_confidence: 'Min confidence',
   clock_chime: 'Hourly chime',
-  clock_chime_output: 'Chime output',
   clock_chime_media_player: 'Chime speaker',
   clock_chime_quiet_hours: 'Quiet hours',
-  clock_chime_volume: 'Chime volume',
-  clock_call_base: 'Call file base URL',
   calendar: 'Calendar',
   calendar_entities: 'Calendar entities',
   calendar_view: 'Calendar view',
@@ -462,6 +462,7 @@ var HABIRD_HELPERS = {
   selector_position: 'Top pairs poorly with a title - both sit centred up top.',
   weather_entity: 'Default (blank): the first weather.* entity found.',
   forecast_days: 'Days of daily forecast (high/low + precipitation) shown under the current conditions. 0 hides it. Uses your HA weather entity in your HA units.',
+  corner: "Where the weather/calendar block lives. Independent of the clock's own placement (Audubon clock section below) - the two can be in different corners, or the clock centered while this stays put.",
   hide_cursor: 'For wall displays: pointer disappears after 8 s idle.',
   sit_confidence: 'Birds perch at or above this detection confidence and fly below it. 0 = always perched, 1.01 = always flying.',
   audio_boost: "Detection clips are quiet; this boosts playback up to +48 dB (0 dB = off), compressed to curb clipping. Faint clips get much louder; the loudest can distort a little near the top - ease off if so.",
@@ -487,16 +488,17 @@ var HABIRD_HELPERS = {
   poll_seconds: 'Safety-net refresh. MQTT pushes new detections instantly.',
   live: "Opens a live connection to BirdNET-Go's own detection stream (in addition to the MQTT push above) so new calls refresh the card within a couple seconds. Falls back to the interval above alone if the stream is unavailable (older BirdNET-Go, or Private Mode).",
   visits_sensors: "Optional: a feeder camera's BirdNET-style “... scientific name” sensors (e.g. published by an LLM Vision automation). Their sightings blend in as per-species “visits” next to the audio “calls” - on hover, in the atlas and in the detail view.",
-  clock_style: 'Analog swaps the digital block for an Audubon "singing bird clock" dial - a bird illustration at each hour, drawn from that hour’s detections. Both keeps the digital line under it.',
+  clock_style: 'Analog swaps the digital block for an Audubon "singing bird clock" dial (a bird illustration at each hour, drawn from that hour’s detections) with no digits anywhere - real Audubon clocks have none. Both keeps a digital time/conditions readout in the dial’s own hub.',
+  clock_placement: "Grouped (default) keeps the clock with weather/calendar wherever the Dashboard section's corner puts them - unchanged from before. Main pulls it out into its own dead-centre widget, sized way up, with the flock ringing it; weather/calendar (if on) stay together at their own corner instead of piling into the middle with it.",
+  clock_size: "Any CSS size - '220px', '42vmin', '20rem' - overriding the automatic default (184px grouped, scaling up to ~560px when placement is Main). Relative units scale with the viewport/card. Blank = automatic.",
   clock_birds: 'Show an illustration at each hour position (analog styles only).',
   clock_hours: '12 folds each hour together with the one 12 h away (a robin at 7am and 7pm share a slot). 24 gives distinct dawn and dusk birds - needs a richer species pool.',
   clock_reassign: 'How often the hour->bird assignment is recomputed. The result is persisted and only re-shuffles when a challenger clearly beats the incumbent.',
   clock_window_days: 'How many days of detection history the hour assignment is built from (default 30).',
   clock_min_confidence: 'Ignore detections below this confidence when building the hour assignment. 0 keeps them all.',
-  clock_chime: 'On the hour, play that hour’s bird call (needs an analog style). Browsers block autoplay until you tap the dial once; "HA media player" output avoids that.',
-  clock_chime_output: 'Browser plays through this page (one tap to unlock audio). HA media player casts the call to a real speaker and sidesteps autoplay entirely.',
+  clock_chime: "On the hour, cast that hour's bird call to a real HA speaker (needs an analog style, a Xeno-Canto key above, and a media player below). The call is fetched from Xeno-Canto - no local audio files to manage.",
+  clock_chime_media_player: 'The HA media_player entity to cast the chime to. Required for chimes to actually play.',
   clock_chime_quiet_hours: 'e.g. 22:00-07:00 - no chimes during this range (wraps past midnight).',
-  clock_call_base: 'Where the {scientific-name-slug}.mp3 call files live. Default /local/birdcalls/ (drop files in HA’s config/www/birdcalls/). No audio is fetched from the API.',
   calendar: 'A month grid and/or agenda from your HA calendar entities, refreshed every 5 min. Needs the card’s HA connection.',
   calendar_entities: 'Which calendar.* entities to show. Events from all of them are merged.',
 };
@@ -673,6 +675,8 @@ class HABirdCard extends HTMLElement {
         fahrenheit: !!c.fahrenheit,   // BirdNET-Go fallback only; hass uses HA units
         // Audubon analog clock
         clockStyle: c.clock_style || 'digital',
+        clockPlacement: c.clock_placement || 'grouped',
+        clockSize: c.clock_size || '',
         clockBirds: c.clock_birds !== false,
         clockHours: (+c.clock_hours === 24) ? 24 : 12,
         clockSeconds: !!c.clock_seconds,
@@ -680,14 +684,10 @@ class HABirdCard extends HTMLElement {
         clockReassign: c.clock_reassign || 'daily',
         clockMinConfidence: (c.clock_min_confidence == null ? 0 : +c.clock_min_confidence),
         hourBirds: c.hour_birds || {},
-        // Chimes
+        // Chimes - cast to a media_player, call fetched from Xeno-Canto
         clockChime: !!c.clock_chime,
         clockChimeQuietHours: c.clock_chime_quiet_hours || '',
-        clockChimeVolume: (c.clock_chime_volume == null ? 0.7 : +c.clock_chime_volume),
-        clockChimeOutput: c.clock_chime_output || 'browser',
         clockChimeMediaPlayer: c.clock_chime_media_player || '',
-        clockCallBase: c.clock_call_base || '/local/birdcalls/',
-        hourCallOverrides: c.hour_call_overrides || {},
         // Calendar
         calendar: !!c.calendar,
         calendarEntities: c.calendar_entities || [],
@@ -752,7 +752,7 @@ class HABirdCardEditor extends HTMLElement {
       this.appendChild(this._form);
     }
     this._form.schema = HABIRD_EDITOR_SCHEMA;
-    this._form.data = Object.assign({ corner: 'bottom-right', sit_confidence: 0.90, window: '24', background: 'transparent', font: 'system', data_source: 'auto', view: 'collage', view_selector: true, selector_position: 'bottom', names: 'off', names_size: 13, collage_fill: 0.5, size_contrast: 0.5, paper_color: '', paper_color_dark: '', ink_color: '', ink_color_dark: '', paper_texture: 0, audio_boost: 24, live: true }, this._config);
+    this._form.data = Object.assign({ corner: 'bottom-right', clock_placement: 'grouped', sit_confidence: 0.90, window: '24', background: 'transparent', font: 'system', data_source: 'auto', view: 'collage', view_selector: true, selector_position: 'bottom', names: 'off', names_size: 13, collage_fill: 0.5, size_contrast: 0.5, paper_color: '', paper_color_dark: '', ink_color: '', ink_color_dark: '', paper_texture: 0, audio_boost: 24, live: true }, this._config);
     this._form.hass = this._hass;
   }
 }

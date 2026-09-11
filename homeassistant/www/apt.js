@@ -1547,6 +1547,29 @@
   function assetSrc(sci, pose) {
     return './assets/illustrations/' + slugify(sci) + (pose === 2 ? '-2' : '') + '.png';
   }
+  function cutoutSrc(sci) {
+    return './assets/cutouts/' + slugify(sci) + '.png';
+  }
+  // Does this species have ANY bundled art at all (illustration or photo
+  // cutout - the same two tiers __birdImgErr falls through below)? Used to
+  // keep the Audubon clock's rim thumbnails from ever landing on a species
+  // that would just render invisible (see the hide branch below) - a blank
+  // rim position reads as broken on a wall display. HEAD probes, same
+  // approach as the detail modal's pose-availability check; memoized since
+  // the same species gets re-checked on every clock reassignment.
+  var _artProbeCache = {};
+  function speciesHasArt(sci) {
+    if (_artProbeCache[sci]) return _artProbeCache[sci];
+    function probe(url) {
+      return fetch(url, { method: 'HEAD', cache: 'no-store' })
+        .then(function (r) { return !!r.ok; })
+        .catch(function () { return false; });
+    }
+    var p = probe(assetSrc(sci, 1)).then(function (ok) {
+      return ok ? true : probe(cutoutSrc(sci));
+    });
+    return (_artProbeCache[sci] = p);
+  }
   window.__birdImgErr = function (img) {
     var slug = img.getAttribute('data-slug');
     var step = +(img.getAttribute('data-fb') || 0);
@@ -1557,7 +1580,7 @@
       img.src = './assets/illustrations/' + slug + '.png';
     } else if (step === 1) {
       // No illustration at all -> background-removed photo cutout.
-      img.src = './assets/cutouts/' + slug + '.png';
+      img.src = cutoutSrc(slug);
     } else {
       // Nothing bundled for this species - hide rather than show the
       // browser's broken-image glyph. (Deliberately NOT falling back to
@@ -1599,6 +1622,9 @@
   //     opts.hysteresis: number         a challenger must beat the incumbent's
   //                                     score by this fraction to unseat it
   //                                     (default 0.25)
+  //     opts.excludeSci: scientificName[]   left out of the automatic pool
+  //                                     entirely (matched/borrowed/fallback) -
+  //                                     pins still win regardless
   //   source in { pinned, history, borrowed, fallback, reused }
   //   dim: true  -> thin data (borrowed / fallback / reused); UI de-emphasizes.
 
@@ -1706,6 +1732,12 @@
     var pins = opts.pins || {};
     var incumbents = opts.incumbents || {};
     var hyst = (typeof opts.hysteresis === 'number') ? opts.hysteresis : 0.25;
+    // Species to leave out of the automatic pool entirely (e.g. confirmed
+    // to have no bundled art - see speciesHasArt) - never matched,
+    // borrowed, or used as a fallback. Pins still win regardless; that's
+    // an explicit user override.
+    var excludeSci = {};
+    (opts.excludeSci || []).forEach(function (s) { excludeSci[s] = true; });
 
     var out = {};
     var folded = _foldMatrix(matrix, positions);
@@ -1723,7 +1755,7 @@
       }
     }
     var poolFolded = {};
-    Object.keys(folded).forEach(function (s) { if (!pinnedSci[s]) poolFolded[s] = folded[s]; });
+    Object.keys(folded).forEach(function (s) { if (!pinnedSci[s] && !excludeSci[s]) poolFolded[s] = folded[s]; });
     var pool = Object.keys(poolFolded);
 
     // 2. Score over the remaining pool, then Hungarian over the open positions
@@ -2489,16 +2521,31 @@
       obstacles.push(ob);
       return true;
     }
+    // Register each sub-widget on its own so the flock can nest into the
+    // gaps between clock / weather / calendar and, for the round dial, the
+    // corners of its bounding box. Falls back to the whole block if the
+    // children haven't measured yet (jsdom, first paint).
+    //
+    // The clock is either promoted to its own #wallClock box (corner:
+    // center - see wallDisplay() in apt.js) or still living inside
+    // #wallWidgets alongside weather/calendar; wwGot is shared across
+    // both so the #wallWidgets fallback only fires when NONE of its own
+    // children measured (clock included, when it's the one living there).
+    var wwClockEl = document.getElementById('wwClock');
+    var wwRound = !!(wwClockEl && wwClockEl.classList.contains('ww-analog'));
+    var wallClockEl = document.getElementById('wallClock');
+    var clockStandalone = !!(wallClockEl && wwClockEl && wwClockEl.parentElement === wallClockEl);
+    var wwGot = 0;
+    if (clockStandalone) {
+      if (wallClockEl && !wallClockEl.hidden) {
+        var gotClock = !!(wwClockEl && !wwClockEl.hidden && addObstacle(wwClockEl, { ellipse: wwRound }));
+        if (!gotClock) addObstacle(wallClockEl);
+      }
+    } else if (wwClockEl && !wwClockEl.hidden) {
+      wwGot += addObstacle(wwClockEl, { ellipse: wwRound }) ? 1 : 0;
+    }
     var wwEl = document.getElementById('wallWidgets');
     if (wwEl && !wwEl.hidden) {
-      // Register each sub-widget on its own so the flock can nest into the
-      // gaps between clock / weather / calendar and, for the round dial,
-      // the corners of its bounding box. Falls back to the whole block if
-      // the children haven't measured yet (jsdom, first paint).
-      var wwClockEl = document.getElementById('wwClock');
-      var wwRound = !!(wwClockEl && wwClockEl.classList.contains('ww-analog'));
-      var wwGot = 0;
-      if (wwClockEl && !wwClockEl.hidden) wwGot += addObstacle(wwClockEl, { ellipse: wwRound }) ? 1 : 0;
       var wwWxEl = document.getElementById('wwWeather');
       if (wwWxEl && !wwWxEl.hidden) wwGot += addObstacle(wwWxEl) ? 1 : 0;
       var wwCalEl = document.getElementById('wwCalendar');
@@ -6058,7 +6105,8 @@
       return new RegExp('[?&]' + name + '(=|&|$)').test(location.search);
     }
     function urlStr(name) {
-      var m = location.search.match(new RegExp('[?&]' + name + '=([\\w-]+)'));
+      // %/. included so CSS-size params (clock_size=42vmin, =50%) work too.
+      var m = location.search.match(new RegExp('[?&]' + name + '=([\\w.%-]+)'));
       return m ? m[1] : '';
     }
     var wallOn      = urlFlag('wall');
@@ -6068,28 +6116,49 @@
     var hideCursor  = !!WALL.hideCursor || wallOn;
 
     var wrap = document.getElementById('wallWidgets');
+    var wallClockEl = document.getElementById('wallClock');
     if (!wrap) return;
     var corner = urlStr('corner') || WALL.corner || 'bottom-right';
-    // 'center' makes the block (typically the analog dial) the display's
-    // main widget, dead-middle, with the flock ringing it - the round dial
-    // is already an elliptical packing obstacle, so birds nest for free
-    // into the corners of its bounding box instead of overlapping it.
     if (['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center'].indexOf(corner) >= 0) {
       wrap.setAttribute('data-corner', corner);
     }
-    if (showClock || showWeather || showCalendar) wrap.hidden = false;
+    // Clock placement is independent of `corner` above, which only steers
+    // weather/calendar. 'main' promotes the clock to its own dead-centre
+    // widget (#wallClock, already data-corner="center" in the markup),
+    // full dial size, flock ringing it (the round dial is already an
+    // elliptical packing obstacle, so birds nest for free into the corners
+    // of its bounding box) - weather/calendar stay wherever `corner` puts
+    // them instead of piling into the middle with it.
+    var clockPlacement = urlStr('clock_placement') || WALL.clockPlacement || 'grouped';
+    var mainWidgetClock = clockPlacement === 'main';
+    if (mainWidgetClock && wallClockEl) {
+      var wwClockToPromote = document.getElementById('wwClock');
+      if (wwClockToPromote) wallClockEl.appendChild(wwClockToPromote);
+    }
+    if (mainWidgetClock && wallClockEl) {
+      if (showClock) wallClockEl.hidden = false;
+      if (showWeather || showCalendar) wrap.hidden = false;
+    } else if (showClock || showWeather || showCalendar) {
+      wrap.hidden = false;
+    }
 
     // The widget box is a packing obstacle, so whenever its size settles
     // or changes (first weather paint, mostly) the collage re-packs
     // around the new footprint. The 30s data poll re-packs anyway; this
-    // just avoids a visibly-overlapped first half-minute.
-    var lastW = 0, lastH = 0;
-    function repackIfGrown() {
-      var r = wrap.getBoundingClientRect();
-      if (Math.abs(r.width - lastW) > 6 || Math.abs(r.height - lastH) > 6) {
-        lastW = r.width; lastH = r.height;
+    // just avoids a visibly-overlapped first half-minute. Clock and
+    // weather/calendar track their own sizes separately since (when the
+    // clock is promoted) they're two independent boxes.
+    var lastSizes = {};
+    function repackIfGrown(el, key) {
+      var r = (el || wrap).getBoundingClientRect();
+      var last = lastSizes[key || 'ww'] || (lastSizes[key || 'ww'] = { w: 0, h: 0 });
+      if (Math.abs(r.width - last.w) > 6 || Math.abs(r.height - last.h) > 6) {
+        last.w = r.width; last.h = r.height;
         renderCollageFromData();
       }
+    }
+    function repackClockIfGrown() {
+      repackIfGrown(mainWidgetClock ? wallClockEl : wrap, 'clock');
     }
 
     // ---- Clock ----
@@ -6113,6 +6182,9 @@
       // current conditions whenever the dial is shown, so this line under
       // the dial would just repeat them - hide it for both analog styles.
       clockEl.classList.toggle('ww-digital-hidden', analogClock);
+      // 'analog' means the dial ALONE - real Audubon clocks have no digits
+      // anywhere, so this also drops the hub readout that 'both' keeps.
+      clockEl.classList.toggle('ww-dial-only', clockStyle === 'analog');
       var dialTimeEl = document.getElementById('wwDialTime');
 
       var drawClock = function () {
@@ -6139,6 +6211,12 @@
       var nameEl = document.getElementById('wwDialName');
       if (!dialEl || !faceEl) return;
       dialEl.hidden = false;
+      // Any CSS size ('220px', '42vmin', '20rem', ...) overrides the
+      // automatic default (184px grouped, a clamp up to ~560px when
+      // clockPlacement is 'main') in either mode - relative units scale
+      // with the viewport/card the way the automatic clamp does.
+      var clockSize = String(urlStr('clock_size') || WALL.clockSize || '').trim();
+      if (clockSize) dialEl.style.setProperty('--ww-dial-size', clockSize);
 
       var NS = 'http://www.w3.org/2000/svg';
       function mk(tag, attrs) {
@@ -6258,7 +6336,7 @@
           }
         }
         renderActive();
-        repackIfGrown();
+        repackClockIfGrown();
       }
 
       birdsEl.addEventListener('click', function (ev) {
@@ -6278,20 +6356,36 @@
           minConfidence: +WALL.clockMinConfidence || 0,
           pool: pool.length ? pool : null,
         }).then(function (res) {
-          var pins = {};
-          var hb = WALL.hourBirds || {};
-          Object.keys(hb).forEach(function (h) {
-            var p = clockPosOfHour(+h, positions);
-            if (!pins[p]) pins[p] = hb[h];
+          // Keep any species with no bundled art (neither illustration nor
+          // photo cutout - see __birdImgErr's fallback chain) out of the
+          // rim assignment entirely, so a position never ends up holding a
+          // bird that just renders invisible. Probe the MATRIX's own
+          // species (what assignHours actually draws from), not `pool` -
+          // the daily-summary/HA fallback paths return every species
+          // regardless of `pool` (see clockHourMatrix's doc comment), so
+          // `pool` alone can miss real candidates.
+          var candidates = Object.keys(res.matrix || {});
+          return Promise.all(candidates.map(function (sci) {
+            return speciesHasArt(sci).then(function (ok) { return ok ? null : sci; });
+          })).then(function (noArt) {
+            var pins = {};
+            var hb = WALL.hourBirds || {};
+            Object.keys(hb).forEach(function (h) {
+              var p = clockPosOfHour(+h, positions);
+              if (!pins[p]) pins[p] = hb[h];
+            });
+            var prev = null;
+            try { prev = JSON.parse(readLS('bird:clockAssign', 'null')); } catch (e) { prev = null; }
+            var incumbents = (prev && prev.positions === positions && prev.byPos) ? prev.byPos : {};
+            assignment = assignHours(res.matrix, {
+              positions: positions, pins: pins, incumbents: incumbents,
+              excludeSci: noArt.filter(Boolean),
+            });
+            var byPos = {};
+            Object.keys(assignment).forEach(function (p) { byPos[p] = assignment[p].species; });
+            writeLS('bird:clockAssign', JSON.stringify({ ts: Date.now(), positions: positions, byPos: byPos }));
+            renderRim();
           });
-          var prev = null;
-          try { prev = JSON.parse(readLS('bird:clockAssign', 'null')); } catch (e) { prev = null; }
-          var incumbents = (prev && prev.positions === positions && prev.byPos) ? prev.byPos : {};
-          assignment = assignHours(res.matrix, { positions: positions, pins: pins, incumbents: incumbents });
-          var byPos = {};
-          Object.keys(assignment).forEach(function (p) { byPos[p] = assignment[p].species; });
-          writeLS('bird:clockAssign', JSON.stringify({ ts: Date.now(), positions: positions, byPos: byPos }));
-          renderRim();
         }).catch(function () { /* no data yet - the dial just shows no birds */ });
       }
 
@@ -6301,8 +6395,16 @@
         var ms = now.getMilliseconds();
         var s = now.getSeconds() + ms / 1000;
         var m = now.getMinutes() + s / 60;
-        var h12 = (now.getHours() % 12) + m / 60;
-        setHand(hHand, h12 / 12 * 360);
+        // 24-position mode spaces rim thumbnails around the FULL circle
+        // (one per hour, ti/24 turns - see the tick loop above), so the
+        // hour hand has to sweep once per day (h/24 turns) to keep landing
+        // on the hour it's actually pointing at; the standard twice-a-day
+        // 12-hour sweep would point "5 o'clock" at the position holding a
+        // completely different hour's bird.
+        var hDeg = (positions === 24)
+          ? (now.getHours() + m / 60) / 24 * 360
+          : ((now.getHours() % 12) + m / 60) / 12 * 360;
+        setHand(hHand, hDeg);
         setHand(mHand, m / 60 * 360);
         if (wantSeconds) setHand(sHand, s / 60 * 360);
         setActive(now.getHours());
@@ -6310,29 +6412,25 @@
         setTimeout(tick, wantSeconds ? Math.max(200, 1000 - ms) : (61 - now.getSeconds()) * 1000);
       };
 
-      // --- Chimes: on the hour, play that hour's bird call ---
-      // Resolution per hour: hour_call_overrides[h] -> {clock_call_base}
-      // {scientific-slug}.mp3 -> silent. Fires exactly once per hour change
-      // (deduped on lastChimeHour), never on the initial load, never in
-      // quiet hours. Browser autoplay needs a gesture first - the unlock
-      // overlay stays up until one lands; media_player output skips all that.
+      // --- Chimes: on the hour, cast that hour's bird call to a real HA
+      // speaker via media_player.play_media ---
+      // The call itself comes from Xeno-Canto (resolveReferenceCall - the
+      // same lookup the reference-call tap/modal button uses), so there's
+      // no local {scientific-slug}.mp3 file convention to maintain; needs
+      // xenoCantoKey configured, silent without one. Browser playback was
+      // dropped - it needed a tap-to-unlock gesture on every dashboard
+      // load, which is a non-starter for an unattended wall display.
+      // Fires exactly once per hour change (deduped on lastChimeHour),
+      // never on the initial load, never in quiet hours.
       if (WALL.clockChime) {
-        var chimeVol = Math.max(0, Math.min(1, WALL.clockChimeVolume == null ? 0.7 : +WALL.clockChimeVolume));
-        var chimeOut = String(WALL.clockChimeOutput || 'browser').toLowerCase();
         var chimeMP = WALL.clockChimeMediaPlayer || '';
-        var callBase = WALL.clockCallBase || '/local/birdcalls/';
-        if (callBase && !/\/$/.test(callBase)) callBase += '/';
-        var callOver = WALL.hourCallOverrides || {};
         var quiet = (function (spec) {
           var m = String(spec || '').match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
           if (!m) return null;
           return { start: (+m[1]) * 60 + (+m[2]), end: (+m[3]) * 60 + (+m[4]) };
         })(WALL.clockChimeQuietHours);
-        var chimeUnlocked = (chimeOut === 'media_player');
-        var chimeCtx = null;
         var lastChimeHour = -1;
 
-        var unlockEl = document.getElementById('wwChimeUnlock');
         function inQuiet(now) {
           if (!quiet || quiet.start === quiet.end) return false;
           var mins = now.getHours() * 60 + now.getMinutes();
@@ -6340,52 +6438,18 @@
             ? (mins >= quiet.start && mins < quiet.end)
             : (mins >= quiet.start || mins < quiet.end);
         }
-        function callUrl(hr, sci) {
-          if (callOver[hr]) return callOver[hr];
-          return sci ? (callBase + slugify(sci) + '.mp3') : '';
-        }
-        function unlockAudio() {
-          try {
-            var Ctx = window.AudioContext || window.webkitAudioContext;
-            if (Ctx) {
-              chimeCtx = chimeCtx || new Ctx();
-              if (chimeCtx.state === 'suspended') chimeCtx.resume();
-              var src = chimeCtx.createBufferSource();
-              src.buffer = chimeCtx.createBuffer(1, 1, 22050);
-              src.connect(chimeCtx.destination);
-              src.start(0);
-            }
-            chimeUnlocked = true;
-            if (unlockEl) unlockEl.hidden = true;
-          } catch (e) { /* stay visible; try again on the next gesture */ }
-        }
-        if (chimeOut !== 'media_player' && unlockEl) {
-          unlockEl.hidden = false;
-          unlockEl.addEventListener('click', unlockAudio);
-          document.addEventListener('pointerdown', unlockAudio, { passive: true });
-          document.addEventListener('keydown', unlockAudio);
-        }
         function playChime(hr) {
+          if (!chimeMP || !refCallEnabled()) return;
           var a = assignment[clockPosOfHour(hr, positions)];
-          var url = callUrl(hr, a && a.species);
-          if (!url) return;
-          if (chimeOut === 'media_player') {
-            if (!chimeMP) return;
-            var abs = /^https?:/.test(url) ? url : (location.origin + url);
+          var sci = a && a.species;
+          if (!sci) return;
+          resolveReferenceCall(sci).then(function (cands) {
+            var info = _refCallOrder(sci, cands)[0];
+            if (!info || !info.url) return;
             haCallService('media_player', 'play_media',
-              { media_content_id: abs, media_content_type: 'music' },
-              { entity_id: chimeMP }).catch(function () {});
-            return;
-          }
-          try {
-            var au = new Audio(url);
-            au.volume = chimeVol;
-            var p = au.play();
-            if (p && p.catch) p.catch(function () {
-              chimeUnlocked = false;
-              if (unlockEl) unlockEl.hidden = false;
-            });
-          } catch (e) { /* ignore */ }
+              { media_content_id: info.url, media_content_type: 'music' },
+              { entity_id: chimeMP }).then(function () { _refSaveWorking(sci, info); }).catch(function () {});
+          }).catch(function () { /* no recording this hour - stay silent */ });
         }
         chimeHook = function (now) {
           var hr = now.getHours();
@@ -6393,7 +6457,6 @@
           var first = lastChimeHour === -1;
           lastChimeHour = hr;
           if (first || inQuiet(now)) return;
-          if (chimeOut !== 'media_player' && !chimeUnlocked) return;
           playChime(hr);
         };
       }
@@ -6497,8 +6560,11 @@
         condEl.textContent = condTxt;
         sunEl.textContent = (rise && set) ? ('sun ' + rise + ' \u2013 ' + set) : '';
         wxEl.hidden = false;
+        // Only a divider between clock and weather when they're still
+        // sharing #wallWidgets - once the clock is promoted to its own
+        // #wallClock box (corner: center) there's nothing to divide here.
         var rule = document.getElementById('wwRule');
-        if (rule && showClock) rule.hidden = false;
+        if (rule && showClock && !mainWidgetClock) rule.hidden = false;
         // The analog dial's hub carries current conditions itself
         // (#wwDialCenter) - stop repeating temp/condition out here once
         // it's showing; sunrise/sunset and the forecast row stay outside,

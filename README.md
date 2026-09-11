@@ -264,19 +264,28 @@ xeno_canto_key: ""           # free key from xeno-canto.org/account; enables the
 audio_boost: 24              # recording playback boost in dB, 0-48 (0 = off) - for quiet mics
 clock: true                  # time + date in a corner of the collage
 clock_style: digital         # digital (default) | analog (Audubon bird-clock
-                             #   dial) | both
+                             #   dial, no digits anywhere) | both (dial +
+                             #   digital readout in its hub)
+clock_placement: grouped     # grouped (default, stays with weather/calendar
+                             #   at `corner` below) | main (its own dead-centre
+                             #   widget, sized way up, flock ringing it)
+clock_size: ""               # any CSS size - "220px" | "42vmin" | "20rem" -
+                             #   sets the dial size directly (relative units
+                             #   scale with the viewport/card); blank =
+                             #   automatic (184px grouped, up to ~560px
+                             #   scaling with viewport when placement: main)
 clock_birds: true            # analog: a bird illustration at each hour
 clock_hours: 12              # 12 (fold AM+PM) | 24 (distinct dawn/dusk birds)
 clock_seconds: false         # analog: show a sweeping second hand
 clock_window_days: 30        # history the hour->bird assignment is built on
 clock_reassign: daily        # daily | hourly | manual recompute cadence
 hour_birds: {}               # pin a species to an hour, e.g. { 7: Turdus migratorius }
-clock_chime: false           # analog: play that hour's call on the hour
-clock_chime_output: browser  # browser (tap dial to unlock) | media_player
-clock_chime_media_player: "" # media_player.* entity for media_player output
+clock_chime: false           # analog: cast that hour's call to a media_player
+                             #   (call fetched from Xeno-Canto - needs
+                             #   xeno_canto_key above)
+clock_chime_media_player: "" # media_player.* entity to cast the chime to -
+                             #   required for chimes to actually play
 clock_chime_quiet_hours: ""  # e.g. "22:00-07:00"
-clock_chime_volume: 0.7      # 0-1, browser output
-clock_call_base: /local/birdcalls/   # {scientific-slug}.mp3 lives here
 weather: true                # conditions + sunrise/sunset from HA
 weather_entity: ""           # empty = first weather.* entity found
 forecast_days: 0             # 0 = off; N = N-day daily forecast (high/low +
@@ -287,10 +296,11 @@ calendar_view: both          # month | agenda | both
 calendar_week_start: sunday  # sunday | monday
 agenda_days_ahead: 7         # agenda horizon
 agenda_max_events: 6         # agenda length
-corner: bottom-right         # where the clock/weather/calendar block lives
+corner: bottom-right         # where the weather/calendar block lives
                              #   (top-left | top-right | bottom-left |
-                             #   bottom-right | center - center makes it
-                             #   the display's main widget, flock ringing it)
+                             #   bottom-right | center). Independent of
+                             #   clock_placement above - the clock can be
+                             #   centered while this stays put, or vice versa.
 hide_cursor: false           # hide the pointer after 8s idle (wall displays)
 image_base: ""               # empty = artwork from CDN (see below)
 visits_sensors: []           # feeder-camera sensors - blends per-species
@@ -351,26 +361,30 @@ challenger clearly beats the incumbent. `clock_hours: 24` gives distinct
 dawn and dusk birds; `hour_birds: { 7: Turdus migratorius }` pins one.
 Tapping a rim bird plays its call and follows `tap_action`. The hour and
 minute hands (and the sweeping second hand, `clock_seconds: true`) are
-tapered lance shapes, not bare lines. Digital time and current conditions
-ride together in the dial's own hub instead of a line underneath it -
-`clock_style: both` no longer repeats them below the dial, it's the same
-hub either way.
+tapered lance shapes, not bare lines. `clock_style: analog` is the dial
+alone, no digits anywhere - real Audubon clocks have none; `both` adds a
+digital time + current-conditions readout, in the dial's own hub rather
+than a line underneath it.
 
-Set **`corner: center`** to make the dial the display's centrepiece: it
-grows to fill most of the frame and sits dead-middle, with the flock
+Set **`clock_placement: main`** to make the dial the display's centrepiece:
+it grows to fill most of the frame and sits dead-middle, with the flock
 scattering into the ring around it (the round dial is already an
 elliptical packing obstacle, so birds tuck into the corners of its
-bounding square for free). Pairs well with a full panel/dashboard view
+bounding square for free). Weather and calendar, if also on, stay paired
+together wherever `corner` puts them instead of crowding into the middle
+with it - the two placements are independent. `clock_size` overrides the
+automatic dial size (in either placement) with any CSS size - a fixed
+`220px`, or a relative `42vmin`/`20rem` that scales with the viewport or
+card. Main placement pairs well with a full panel/dashboard view
 rather than a small sidebar card.
 
-With **`clock_chime: true`** the dial plays that hour's call on the hour,
-from static files you drop in `config/www/birdcalls/` (named by scientific
-slug, e.g. `turdus-migratorius.mp3`; override per hour with
-`hour_call_overrides`). Nothing is fetched from the API. Browsers block
-autoplay until a gesture, so the dial shows a one-tap "enable chimes"
-overlay on a kiosk; `clock_chime_output: media_player` casts the call to a
-real HA speaker and avoids autoplay entirely. For an untouched kiosk, launch
-Chromium with `--autoplay-policy=no-user-gesture-required`.
+With **`clock_chime: true`** the dial casts that hour's call to a real HA
+speaker via `clock_chime_media_player` (`media_player.play_media`). The
+call itself comes from Xeno-Canto - the same lookup the reference-call
+tap/modal button uses - so it needs `xeno_canto_key` set; there's no local
+audio file convention to maintain, and nothing plays through the browser
+itself (which would otherwise need a tap-to-unlock gesture on every
+dashboard load - a non-starter for an unattended wall display).
 
 **Calendar** (`calendar: true`): a month grid and/or agenda
 (`calendar_view`) built from your HA calendar entities

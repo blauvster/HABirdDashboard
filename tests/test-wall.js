@@ -82,7 +82,7 @@ let done = 0;
       }
       assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
       console.log('A: obstacle packing + BG weather OK (tiles all left of the clock zone)');
-      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+      if (++done === 8) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
     } catch (e) { console.error('A FAIL:', e.message); process.exit(1); }
   }, 1600);
 }
@@ -127,7 +127,7 @@ let done = 0;
       assert.strictEqual(doc.getElementById('wallWidgets').getAttribute('data-corner'), 'bottom-right', 'default corner');
       assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
       console.log('B: HA weather via token OK (auto-discovery, units, sun.sun)');
-      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+      if (++done === 8) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
     } catch (e) { console.error('B FAIL:', e.message); process.exit(1); }
   }, 1600);
 }
@@ -181,7 +181,7 @@ let done = 0;
       assert.ok(!/mm/.test(cols[0].textContent) && !/%/.test(cols[0].textContent), 'dry day 1 has no precip text: ' + cols[0].textContent);
       assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
       console.log('C: daily forecast OK (get_forecasts, column count, high/low, precip)');
-      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+      if (++done === 8) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
     } catch (e) { console.error('C FAIL:', e.message); process.exit(1); }
   }, 1600);
 }
@@ -202,7 +202,13 @@ let done = 0;
     config: { birdnetGoUrl: '', sitConfidence: 0.96,
       wall: { clock: true, clockStyle: 'analog', clockHours: 12, clockSeconds: true } },
     onFetch: () => (url) => {
-      const p = String(url).replace('http://ha.local:8080', '');
+      const u = String(url);
+      // speciesHasArt HEAD-probes these before assignment; both species
+      // "have" bundled art here so the assignment isn't excluded.
+      if (u.indexOf('/assets/illustrations/') >= 0 || u.indexOf('/assets/cutouts/') >= 0) {
+        return Promise.resolve({ ok: true, status: 200 });
+      }
+      const p = u.replace('http://ha.local:8080', '');
       if (p.startsWith('/api/v2/analytics/species/daily')) return ok(clockDaily);
       return bgData(p) || nf();
     },
@@ -235,7 +241,7 @@ let done = 0;
       assert.ok(saved && saved.positions === 12 && saved.byPos, 'assignment persisted to localStorage');
       assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
       console.log('D: analog dial OK (face, hands, ticks, rim birds, persistence)');
-      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+      if (++done === 8) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
     } catch (e) { console.error('D FAIL:', e.message); process.exit(1); }
   }, 1600);
 }
@@ -285,28 +291,53 @@ let done = 0;
       assert.ok(/Tomorrow/i.test(agenda[1].textContent) && /Dentist/.test(agenda[1].textContent), 'timed tomorrow second: ' + agenda[1].textContent);
       assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
       console.log('E: calendar OK (get_events, month grid, today dot, agenda labels)');
-      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+      if (++done === 8) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
     } catch (e) { console.error('E FAIL:', e.message); process.exit(1); }
   }, 1600);
 }
 
-// --- Scenario F: chime autoplay-unlock overlay ---
+// --- Scenario F: chimes cast to media_player, sourced from Xeno-Canto ---
+// (browser output + the tap-to-unlock overlay were removed - it needed a
+// gesture on every dashboard load, a non-starter for an unattended wall
+// display - so there's no overlay UI left to test; this just checks the
+// markup is gone and that every config combo (media_player set, missing,
+// with/without a Xeno-Canto key) boots without runtime errors. Actually
+// exercising the hour-boundary play_media call would need a real hour
+// change - out of reach of this test's short fake-timer-free window.)
 {
-  const browserChime = boot({
+  const xcRecording = () => ok({ recordings: [{
+    id: '999', gen: 'Turdus', sp: 'migratorius', en: 'American Robin',
+    file: '//xeno-canto.org/999/download', url: '//xeno-canto.org/999',
+    lic: '//creativecommons.org/licenses/by-nc-sa/4.0/', type: 'call', q: 'A', length: '0:12', rec: 'Tester',
+  }] });
+  const withPlayer = boot({
     search: '',
-    config: { birdnetGoUrl: '', sitConfidence: 0.96,
-      wall: { clock: true, clockStyle: 'analog', clockChime: true, clockChimeOutput: 'browser' } },
+    config: { birdnetGoUrl: '', sitConfidence: 0.96, xenoCantoKey: 'XCKEY',
+      wall: { clock: true, clockStyle: 'analog', clockChime: true, clockChimeMediaPlayer: 'media_player.den' } },
     onFetch: () => (url) => {
-      const p = String(url).replace('http://ha.local:8080', '');
+      const u = String(url);
+      if (u.indexOf('xeno-canto.org/api/') >= 0) return xcRecording();
+      const p = u.replace('http://ha.local:8080', '');
       if (p.startsWith('/api/v2/analytics/species/daily')) return ok(daily);
       return bgData(p) || nf();
     },
   });
-  const mpChime = boot({
+  const noPlayer = boot({
+    search: '',
+    config: { birdnetGoUrl: '', sitConfidence: 0.96, xenoCantoKey: 'XCKEY',
+      wall: { clock: true, clockStyle: 'analog', clockChime: true } },
+    onFetch: () => (url) => {
+      const u = String(url);
+      if (u.indexOf('xeno-canto.org/api/') >= 0) return xcRecording();
+      const p = u.replace('http://ha.local:8080', '');
+      if (p.startsWith('/api/v2/analytics/species/daily')) return ok(daily);
+      return bgData(p) || nf();
+    },
+  });
+  const noKey = boot({
     search: '',
     config: { birdnetGoUrl: '', sitConfidence: 0.96,
-      wall: { clock: true, clockStyle: 'analog', clockChime: true,
-        clockChimeOutput: 'media_player', clockChimeMediaPlayer: 'media_player.den' } },
+      wall: { clock: true, clockStyle: 'analog', clockChime: true, clockChimeMediaPlayer: 'media_player.den' } },
     onFetch: () => (url) => {
       const p = String(url).replace('http://ha.local:8080', '');
       if (p.startsWith('/api/v2/analytics/species/daily')) return ok(daily);
@@ -315,19 +346,90 @@ let done = 0;
   });
   setTimeout(() => {
     try {
-      const bDoc = browserChime.window.document;
-      const overlay = bDoc.getElementById('wwChimeUnlock');
-      assert.ok(!overlay.hidden, 'browser chimes: unlock overlay shown until a gesture');
-      overlay.dispatchEvent(new browserChime.window.MouseEvent('click', { bubbles: true }));
-      assert.ok(overlay.hidden, 'overlay hides once tapped (audio unlocked)');
-      assert.deepStrictEqual(browserChime.errors, [], 'browser errors: ' + browserChime.errors.join('; '));
+      assert.strictEqual(withPlayer.window.document.getElementById('wwChimeUnlock'), null,
+        'browser unlock overlay markup is gone');
+      assert.deepStrictEqual(withPlayer.errors, [], 'with-player errors: ' + withPlayer.errors.join('; '));
+      assert.deepStrictEqual(noPlayer.errors, [], 'no-player errors: ' + noPlayer.errors.join('; '));
+      assert.deepStrictEqual(noKey.errors, [], 'no-key errors: ' + noKey.errors.join('; '));
 
-      const mDoc = mpChime.window.document;
-      assert.ok(mDoc.getElementById('wwChimeUnlock').hidden, 'media_player output: no unlock overlay');
-      assert.deepStrictEqual(mpChime.errors, [], 'mp errors: ' + mpChime.errors.join('; '));
-
-      console.log('F: chime unlock overlay OK (shown for browser, tapped-away, absent for media_player)');
-      if (++done === 6) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+      console.log('F: chime config OK (unlock overlay removed, media_player/xeno-canto combos boot clean)');
+      if (++done === 8) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
     } catch (e) { console.error('F FAIL:', e.message); process.exit(1); }
+  }, 1600);
+}
+
+// --- Scenario G: clock_placement 'main' splits the clock from weather/calendar ---
+{
+  const { window, errors } = boot({
+    search: '',
+    config: { birdnetGoUrl: '', sitConfidence: 0.96,
+      wall: { clock: true, weather: true, calendar: true, clockStyle: 'analog',
+        clockPlacement: 'main', calendarEntities: ['calendar.test'], corner: 'top-left' } },
+    onFetch: () => (url) => {
+      const u = String(url);
+      if (u.includes('/api/services/calendar/get_events')) return ok({ service_response: { 'calendar.test': { events: [] } } });
+      const p = u.replace('http://ha.local:8080', '');
+      if (p.startsWith('/api/v2/analytics/species/daily')) return ok(daily);
+      return bgData(p) || nf();
+    },
+  });
+  setTimeout(() => {
+    const doc = window.document;
+    try {
+      const wallClock = doc.getElementById('wallClock');
+      const wallWidgets = doc.getElementById('wallWidgets');
+      const wwClock = doc.getElementById('wwClock');
+      assert.strictEqual(wallClock.getAttribute('data-corner'), 'center', 'clock box is dead-centre');
+      assert.strictEqual(wallWidgets.getAttribute('data-corner'), 'top-left', "weather/calendar keep corner's own value");
+      assert.strictEqual(wwClock.parentElement.id, 'wallClock', 'clock promoted into its own box');
+      assert.strictEqual(doc.getElementById('wwWeather').parentElement.id, 'wallWidgets', 'weather stays put');
+      assert.strictEqual(doc.getElementById('wwCalendar').parentElement.id, 'wallWidgets', 'calendar stays put');
+      assert.ok(!wallClock.hidden, 'clock box visible');
+      assert.ok(!wallWidgets.hidden, 'weather/calendar box visible');
+      assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
+      console.log('G: clock_placement main OK (clock split into its own centred box, weather/calendar stay together)');
+      if (++done === 8) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+    } catch (e) { console.error('G FAIL:', e.message); process.exit(1); }
+  }, 1600);
+}
+
+// --- Scenario H: a species with no bundled art never lands on the dial ---
+{
+  // The owl would naturally win hour 18/19 outright (much stronger signal),
+  // but every illustration/cutout probe for it 404s - it should be left off
+  // the dial entirely, with the weaker-but-art-having crow taking its spot
+  // via the borrow fallback instead.
+  const noArtBird = { scientific_name: 'Strix varia', common_name: 'Barred Owl',
+    count: 200, max_confidence: 0.9, latest_heard: '19:40:00',
+    hourly_counts: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,20,20,0,0,0,0] };
+  const hasArtBird = { scientific_name: 'Corvus corax', common_name: 'Common Raven',
+    count: 40, max_confidence: 0.8, latest_heard: '08:10:00',
+    hourly_counts: [0,0,0,0,0,0,0,0,3,3,0,0,0,0,0,0,0,0,0,0,0,0,0,0] };
+  const { window, errors } = boot({
+    search: '',
+    config: { birdnetGoUrl: '', sitConfidence: 0.96,
+      wall: { clock: true, clockStyle: 'analog', clockHours: 12 } },
+    onFetch: () => (url) => {
+      const u = String(url);
+      if (u.indexOf('/assets/') >= 0) {
+        const has404 = u.indexOf('strix-varia') >= 0;
+        return Promise.resolve({ ok: !has404, status: has404 ? 404 : 200 });
+      }
+      const p = u.replace('http://ha.local:8080', '');
+      if (p.startsWith('/api/v2/analytics/species/daily')) return ok([noArtBird, hasArtBird]);
+      return bgData(p) || nf();
+    },
+  });
+  setTimeout(() => {
+    const doc = window.document;
+    try {
+      const birds = [...doc.getElementById('wwDialBirds').querySelectorAll('img.ww-dial-bird')];
+      const scis = birds.map((b) => b.getAttribute('data-sci'));
+      assert.ok(!scis.includes('Strix varia'), 'art-less owl never rendered as a rim thumbnail');
+      assert.ok(scis.includes('Corvus corax'), 'art-having raven takes a position instead');
+      assert.deepStrictEqual(errors, [], 'errors: ' + errors.join('; '));
+      console.log('H: art-availability exclusion OK (art-less species never lands on the dial)');
+      if (++done === 8) { console.log('\nWALL V2 TESTS PASSED'); process.exit(0); }
+    } catch (e) { console.error('H FAIL:', e.message); process.exit(1); }
   }, 1600);
 }

@@ -163,6 +163,32 @@ ok('pins are honored and never double-assigned elsewhere', () => {
   });
 });
 
+// ---- excludeSci: never matched, borrowed, or used as a fallback ----
+ok('excludeSci keeps an art-less species out of every code path', () => {
+  const matrix = {
+    'Strix varia':        row(0, 30, [6]),      // would win position 6 outright
+    'Turdus migratorius': row(0, 5, [6]),        // weaker at hour 6
+    'Cardinalis cardinalis': row(0, 20, [7]),
+    'Cyanocitta cristata': row(0, 12, [8]),
+  };
+  const out = assignHours(matrix, { positions: 12, excludeSci: ['Strix varia'] });
+  assert.notStrictEqual(out[6].species, 'Strix varia', 'excluded species does not win its natural hour');
+  assert.strictEqual(out[6].species, 'Turdus migratorius', 'next-best species wins instead');
+  Object.keys(out).forEach((p) => {
+    assert.notStrictEqual(out[p].species, 'Strix varia', 'excluded species never appears (position ' + p + ')');
+  });
+});
+ok('excludeSci does not override an explicit pin', () => {
+  const matrix = { 'Strix varia': row(0, 30, [6]), 'Turdus migratorius': row(0, 5, [7]) };
+  const out = assignHours(matrix, {
+    positions: 12,
+    pins: { 6: 'Strix varia' },
+    excludeSci: ['Strix varia'],
+  });
+  assert.strictEqual(out[6].species, 'Strix varia', 'a pin still wins even if also excluded');
+  assert.strictEqual(out[6].source, 'pinned');
+});
+
 // ---- hysteresis: an incumbent within 25% keeps its slot ----
 ok('hysteresis holds an incumbent when the challenger is only ~10% better', () => {
   // position 6 (hour 6): incumbent robin at 20, challenger cardinal at 22.

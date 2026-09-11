@@ -382,3 +382,46 @@ sizing, `time/hourly/batch` shape, and mixed-content behaviour.
    underneath. Hands are tapered lance shapes, not bare lines, and a rim
    position with a bird illustration drops its tick mark (one landmark per
    hour, not two).
+   *Superseded 2026-09-11:* `corner: center` no longer centers the whole
+   `#wallWidgets` block (clock + weather + calendar stacked together) — it
+   now promotes just the clock into its own `#wallClock` box, dead-centre
+   and alone, with the flock ringing it. Weather/calendar, if also on, fall
+   back to `bottom-right` instead of piling into the middle with the dial.
+   See `wallDisplay()` / the `clockStandalone` obstacle branch in
+   `homeassistant/www/apt.js`.
+   *Superseded 2026-09-11 (later same day):* the `corner: center` trigger
+   above was itself replaced by a dedicated `clock_placement: grouped |
+   main` option (+ `clock_size` in px) under the Audubon clock section,
+   independent of `corner` (which now only ever steers weather/calendar).
+   Also this round: chimes dropped the `browser` output entirely (needed a
+   tap-to-unlock gesture on every dashboard load - a non-starter for an
+   unattended wall display) along with `clock_call_base`/
+   `hour_call_overrides` - the call is now resolved from Xeno-Canto via
+   `resolveReferenceCall()`, the same lookup the reference-call tap/modal
+   button uses, and cast to `clock_chime_media_player` only. The hour hand
+   also picked up a real bug fix: in `clock_hours: 24` it was still
+   sweeping the standard twice-a-day 12-hour cycle while the 24 rim
+   thumbnails are spaced once-around-per-day, so the hand pointing at "5
+   o'clock" never lined up with the position actually holding hour 5's
+   bird - it now sweeps `(hour + m/60) / 24` turns in 24-position mode.
+   `#wwDialCenter`'s background is a soft radial paper-colour fade now
+   instead of a hard-edged bordered circle.
+   *Superseded 2026-09-11 (third pass, same day):* `clock_size` became a
+   free-form CSS size string (`'42vmin'`, `'20rem'`, not just px) - set
+   directly as `--ww-dial-size`, so relative units scale with the
+   viewport/card. `clock_style: analog` now truly means dial-only: it also
+   hides `#wwDialCenter` (`.ww-dial-only`), which `both` still shows -
+   they'd become functionally identical after the hub redesign above, which
+   didn't match their editor labels ("Analog dial only" vs "+ digital
+   readout"). `#wwDialCenter`'s background dropped the radial-gradient fade
+   for an 8-direction paper-coloured text-shadow outline on the time/
+   weather text itself - no background shape at all now, just an outlined
+   glyph. And a real gap closed: `assignHours` gained `opts.excludeSci` -
+   species probed (HEAD requests against both the illustration and cutout
+   URLs, `speciesHasArt()`) and found to have NEITHER available are now
+   excluded from the rim assignment entirely, so a position can no longer
+   end up holding a species whose thumbnail just renders invisible
+   (`__birdImgErr`'s final fallback is `visibility: hidden`, not a broken-
+   image glyph - previously indistinguishable from "not assigned" without
+   inspecting the DOM). Pins still override exclusion. Tested end-to-end in
+   `test-wall.js` scenario H and unit-tested in `test-clock-assign.js`.

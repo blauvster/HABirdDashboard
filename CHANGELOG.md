@@ -1,5 +1,53 @@
 # Changelog
 
+## v1.7.0 — 2026-09-11
+
+### Added
+- **`clock_placement: grouped | main`.** The clock can now be promoted to
+  its own dead-centre main widget, sized way up, with the flock ringing it
+  - independent of `corner` (which now only ever steers weather/calendar,
+  wherever they end up they stay paired together instead of piling into
+  the middle with a centred clock). `grouped` (default) is unchanged from
+  before: the clock stacks with weather/calendar at `corner`.
+- **`clock_size`.** Any CSS size (`'220px'`, `'42vmin'`, `'20rem'`)
+  overriding the dial's automatic size in either placement - relative
+  units scale with the viewport/card the way the automatic sizing does.
+- **The rim assignment now skips species with no bundled art.** A HEAD
+  probe (`speciesHasArt`, same technique the detail modal's pose picker
+  uses) checks both the illustration and photo-cutout URLs before
+  assignment; a species with neither is excluded from the pool entirely
+  (`assignHours`' new `excludeSci`) so a position can no longer end up
+  holding a bird whose thumbnail just renders invisible. Explicit
+  `hour_birds` pins still override this.
+- **Chimes are fetched from Xeno-Canto**, the same lookup the
+  reference-call tap/modal button already uses - no more local audio-file
+  convention to maintain.
+
+### Changed
+- **`clock_style: analog` is dial-only again - no digits anywhere.**
+  After the v1.6.0 hub redesign, `analog` and `both` had quietly become
+  functionally identical (both always showed the hub readout), which
+  didn't match their own editor labels. `both` still shows the hub;
+  `analog` now hides it too, matching "real Audubon clocks have none."
+- **The dial hub's digital readout dropped its background shape.** No
+  more bordered paper circle (nor the brief radial-gradient version) -
+  the time/current-conditions text now carries its own paper-coloured
+  outline directly on the glyphs, thickness scaling with the dial.
+  Current-conditions text is also larger.
+- **Fixed the 24-hour analog hand.** `clock_hours: 24` spaces the 24 rim
+  thumbnails once around the full circle, but the hour hand was still
+  sweeping the standard twice-a-day 12-hour cycle - so the hand pointing
+  at, say, 5 o'clock never lined up with the position actually holding
+  hour 5's bird. It now sweeps once per day in 24-position mode.
+
+### Removed
+- **Browser chime output** (`clock_chime_output`, `clock_chime_volume`,
+  and the tap-to-unlock overlay). It needed a gesture on every dashboard
+  load - a non-starter for an unattended wall display. Chimes now only
+  cast to `clock_chime_media_player`.
+- **`clock_call_base` / `hour_call_overrides`.** Superseded by the
+  Xeno-Canto lookup above; no local `{scientific-slug}.mp3` files needed.
+
 ## v1.6.1 — 2026-09-08
 
 ### Fixed

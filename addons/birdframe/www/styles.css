@@ -1673,7 +1673,11 @@ body.av-local #dd-items  { display: block; }
 .wall-widgets[data-corner="top-left"]     { left: 36px;  top: 14px;    align-items: flex-start; text-align: left; }
 /* Main-widget placement: dead centre of the collage, flock ringing it (the
    round dial is already an elliptical packing obstacle, so birds nest into
-   its bounding-box corners for free - see addObstacle/ellipse in apt.js). */
+   its bounding-box corners for free - see addObstacle/ellipse in apt.js).
+   #wallClock carries this always (clock_placement: 'main' moves the clock
+   into it - see wallDisplay() in apt.js); the rule is generic to the
+   .wall-widgets class so weather/calendar's own #wallWidgets box can also
+   use corner: center on its own if wanted. */
 .wall-widgets[data-corner="center"] {
   left: 50%; top: 50%; transform: translate(-50%, -50%);
   align-items: center; text-align: center;
@@ -1734,12 +1738,14 @@ body.av-local #dd-items  { display: block; }
 .wall-widgets[data-corner="center"] .ww-dial {
   --ww-dial-size: clamp(240px, 42vmin, 560px);
 }
-/* clock_style: analog drops the digital time/date line (real Audubon
-   clocks have no digits); the time + current conditions now live in the
-   dial's own hub (#wwDialCenter) whenever the dial is shown, so
-   clock_style: both hides this line too rather than repeating them. */
+/* clock_style: both drops the separate digital time/date line below the
+   dial - the time + current conditions live in the dial's own hub
+   (#wwDialCenter) instead, so this line would just repeat them. */
 .ww-block.ww-digital-hidden .ww-big,
 .ww-block.ww-digital-hidden .ww-cap { display: none; }
+/* clock_style: analog is the dial ALONE - real Audubon clocks have no
+   digits anywhere - so it drops the hub readout too (unlike 'both'). */
+.ww-block.ww-dial-only .ww-dial-center { display: none; }
 .ww-dial-face { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .ww-dial-rim { fill: none; stroke: var(--hairline); stroke-width: 1.5; }
 .ww-dial-tick { stroke: var(--ink-soft); stroke-width: 1.5; opacity: 0.7; }
@@ -1767,18 +1773,34 @@ body.av-local #dd-items  { display: block; }
 }
 .ww-dial-bird.is-dim { opacity: 0.4; }
 .ww-dial-bird.is-active { opacity: 1; transform: scale(1.3); }
-/* Digital time + current conditions, in the dial's hub - drawn over the
-   hands/hub (later in source order) on a small paper-coloured medallion so
-   it stays legible wherever the hands happen to point. */
+/* Digital time + current conditions, dead-centre in the dial's hub -
+   drawn over the hands/hub (later in source order) so it stays legible
+   wherever the hands happen to point. No background box - each line
+   instead carries its own paper-coloured outline (an 8-direction
+   text-shadow halo, not a filled box), so the hands read as passing
+   behind the letterforms themselves rather than being interrupted by a
+   stamped disc. */
 .ww-dial-center {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: 1px;
-  width: 46%; aspect-ratio: 1;
-  border-radius: 50%;
-  background: var(--paper);
-  border: 1px solid var(--hairline);
-  padding: 4%;
+  width: 56%;
+  text-align: center;
   pointer-events: none;
+}
+.ww-dial-time,
+.ww-dial-wx {
+  /* Outline thickness scales with the dial, so it stays a deliberate
+     border at any size rather than a hairline on a big main-widget dial. */
+  --ww-dial-outline: clamp(2px, calc(var(--ww-dial-size, 184px) * 0.018), 6px);
+  text-shadow:
+    var(--ww-dial-outline) 0 0 var(--paper),
+    calc(var(--ww-dial-outline) * -1) 0 0 var(--paper),
+    0 var(--ww-dial-outline) 0 var(--paper),
+    0 calc(var(--ww-dial-outline) * -1) 0 var(--paper),
+    var(--ww-dial-outline) var(--ww-dial-outline) 0 var(--paper),
+    calc(var(--ww-dial-outline) * -1) calc(var(--ww-dial-outline) * -1) 0 var(--paper),
+    var(--ww-dial-outline) calc(var(--ww-dial-outline) * -1) 0 var(--paper),
+    calc(var(--ww-dial-outline) * -1) var(--ww-dial-outline) 0 var(--paper);
 }
 .ww-dial-time {
   font: 600 clamp(13px, calc(var(--ww-dial-size, 184px) * 0.12), 34px)/1 var(--av-font-display);
@@ -1787,7 +1809,7 @@ body.av-local #dd-items  { display: block; }
   letter-spacing: 0.01em;
 }
 .ww-dial-wx {
-  font: clamp(7px, calc(var(--ww-dial-size, 184px) * 0.045), 12px)/1.3 var(--av-font-mono);
+  font: clamp(10px, calc(var(--ww-dial-size, 184px) * 0.065), 18px)/1.3 var(--av-font-mono);
   letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--ink-soft);
 }
@@ -1805,24 +1827,6 @@ body.av-local #dd-items  { display: block; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ww-dial-name:empty { display: none; }
-/* Autoplay unlock: a compact chip across the lower third of the dial -
-   visible enough to invite a tap, but the clock still reads behind it. */
-.ww-chime-unlock {
-  position: absolute;
-  left: 8%; right: 8%; bottom: 12%;
-  display: flex; align-items: center; justify-content: center;
-  border: 1px solid var(--hairline); border-radius: 999px;
-  padding: 5px 8px;
-  background: var(--paper);
-  color: var(--ink);
-  font: 8px/1.3 var(--av-font-mono);
-  letter-spacing: 0.1em; text-transform: uppercase;
-  text-align: center;
-  cursor: pointer;
-  pointer-events: auto;
-  box-shadow: 0 1px 6px rgba(0,0,0,0.18);
-}
-.ww-chime-unlock[hidden] { display: none; }
 /* ---- Calendar (calendar: true) ---- */
 .ww-calendar { gap: 6px; align-items: inherit; }
 .ww-calendar[hidden] { display: none; }

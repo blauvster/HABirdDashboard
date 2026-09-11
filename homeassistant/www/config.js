@@ -211,10 +211,9 @@ window.AV_CONFIG = {
   wall: {
     clock: false,          // time + date
     weather: false,        // current conditions + sunrise/sunset
-    corner: 'bottom-right', // 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center'
-                            //   ('center' makes it the display's main widget,
-                            //   flock ringing it - pairs well with clockStyle
-                            //   'analog' and a full-screen/panel display)
+    corner: 'bottom-right', // where the weather/calendar block lives:
+                            //   'top-left' | 'top-right' | 'bottom-left' |
+                            //   'bottom-right' | 'center'
     hideCursor: false,     // hide the mouse cursor after 8s idle (kiosks)
 
     // Audubon "singing bird clock" dial. clockStyle 'analog' swaps the
@@ -231,17 +230,27 @@ window.AV_CONFIG = {
     hourBirds: {},            // pin a species to an hour, e.g.
                               //   { 7: 'Turdus migratorius', 18: 'Strix varia' }
 
-    // Chimes: on the hour, play that hour's bird call (needs clockStyle
-    // 'analog' or 'both'). Browsers block autoplay until a user gesture -
-    // the dial shows a one-tap "enable chimes" overlay; clockChimeOutput
-    // 'media_player' sidesteps that by casting to a real HA speaker.
+    // Clock placement, independent of `corner` above (which only steers
+    // weather/calendar). 'grouped' (default) keeps the clock stacked with
+    // weather/calendar wherever `corner` puts them, unchanged from before;
+    // 'main' promotes it to its own dead-centre widget, sized way up, with
+    // the flock ringing it - weather/calendar (if also on) stay together
+    // at `corner` instead of piling into the middle with it.
+    clockPlacement: 'grouped', // 'grouped' | 'main'
+    clockSize: '',             // any CSS size, e.g. '220px' | '42vmin' | '20rem'
+                               //   sets --ww-dial-size directly, so relative
+                               //   units scale with the viewport/card; blank
+                               //   = automatic (184px grouped, up to ~560px
+                               //   scaling with viewport when 'main')
+
+    // Chimes: on the hour, cast that hour's bird call to a real HA speaker
+    // (needs clockStyle 'analog' or 'both', and the top-level xenoCantoKey
+    // above - the call itself is fetched from Xeno-Canto, the same source
+    // the reference-call tap/modal button uses, so there's no local audio
+    // file convention to maintain).
     clockChime: false,
     clockChimeQuietHours: '',        // e.g. '22:00-07:00' (silent overnight)
-    clockChimeVolume: 0.7,           // 0..1, browser output only
-    clockChimeOutput: 'browser',     // 'browser' | 'media_player'
     clockChimeMediaPlayer: '',       // e.g. 'media_player.living_room'
-    clockCallBase: '/local/birdcalls/', // {scientific-slug}.mp3 lives here
-    hourCallOverrides: {},           // { 7: '/local/birdcalls/robin-custom.mp3' }
 
     // Calendar (needs HA access - the card's hass connection, or haToken
     // on this static page). A month grid and/or a short agenda from your

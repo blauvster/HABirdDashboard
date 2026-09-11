@@ -64,12 +64,23 @@
     <!-- ========== View 1 - Collage ========== -->
     <section class="view" id="v0" aria-label="Bird collage" data-i18n-aria="aria.collage">
       <div class="gcollage" id="collage"></div>
-      <!-- Wall-display widgets (clock / weather), hidden unless enabled in
-           config.js (wall: {...}) or via ?wall. Lives in a corner of the
-           collage view itself; renderCollage() stamps its box into the
-           packing grid so birds nest around the numerals like they do
-           around each other. Sibling of #collage (not inside it) because
-           renderCollage clears the collage's innerHTML on every pass. -->
+      <!-- Wall-display widgets (clock / weather / calendar), hidden unless
+           enabled in config.js (wall: {...}) or via ?wall. Live in a
+           corner of the collage view itself; renderCollage() stamps their
+           boxes into the packing grid so birds nest around them like they
+           do around each other. Siblings of #collage (not inside it)
+           because renderCollage clears the collage's innerHTML on every
+           pass.
+
+           Two boxes, not one: #wallClock stays empty and hidden unless
+           `clock_placement: main` promotes the clock into it as the
+           display's own dead-centre main widget (wallDisplay() in apt.js
+           moves #wwClock in); otherwise the clock stays put in
+           #wallWidgets, stacked with weather/calendar in whichever corner
+           `corner` picks, exactly as before. `corner` only ever steers
+           #wallWidgets (weather/calendar) - the two placements are
+           independent. -->
+      <div class="wall-widgets" id="wallClock" data-corner="center" hidden></div>
       <div class="wall-widgets" id="wallWidgets" data-corner="bottom-right" hidden>
         <div class="ww-block" id="wwClock" hidden>
           <!-- Audubon analog dial (clock_style: analog | both). Face + hands
@@ -86,11 +97,6 @@
               <span class="ww-dial-time" id="wwDialTime">--:--</span>
               <span class="ww-dial-wx" id="wwDialWx"></span>
             </div>
-            <!-- Browser autoplay lock: shown until a user gesture unlocks
-                 audio, so a kiosk wall never sits silently "broken". Only
-                 with clock_chime + browser output. -->
-            <button type="button" class="ww-chime-unlock" id="wwChimeUnlock" hidden
-                    data-i18n="clock.enableChimes">tap to enable chimes</button>
           </div>
           <!-- Active / hovered hour's species (below the dial so it never
                overlaps the rim birds). -->
