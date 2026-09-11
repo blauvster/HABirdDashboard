@@ -251,6 +251,10 @@ window.AV_CONFIG = {
     clockChime: false,
     clockChimeQuietHours: '',        // e.g. '22:00-07:00' (silent overnight)
     clockChimeMediaPlayer: '',       // e.g. 'media_player.living_room'
+    clockChimeMaxSeconds: 5,         // cut playback with media_stop after this
+                                     //   many seconds (Xeno-Canto recordings run
+                                     //   long; HA's play_media has no built-in
+                                     //   trim). 0 = let it play in full.
 
     // Calendar (needs HA access - the card's hass connection, or haToken
     // on this static page). A month grid and/or a short agenda from your

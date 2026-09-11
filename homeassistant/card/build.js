@@ -231,7 +231,7 @@ const wrapper = `
 // you copied the artwork locally (homeassistant/install.sh layout).
 var HABIRD_CDN_ASSETS = 'https://cdn.jsdelivr.net/gh/adamoberley/HABirdDashboard@HABirdDashboard/avian/assets/';
 
-var HABIRD_VERSION = '1.7.0';
+var HABIRD_VERSION = '1.7.1';
 
 var HABIRD_EDITOR_SCHEMA = [
   { name: 'dashboard', type: 'expandable', flatten: true, title: 'Dashboard', expanded: true, schema: [
@@ -360,6 +360,7 @@ var HABIRD_EDITOR_SCHEMA = [
     { name: '', type: 'grid', schema: [
       { name: 'clock_chime_media_player', selector: { entity: { domain: 'media_player' } } },
       { name: 'clock_chime_quiet_hours', selector: { text: {} } },
+      { name: 'clock_chime_max_seconds', selector: { number: { min: 0, max: 60, step: 1, mode: 'box', unit_of_measurement: 's' } } },
     ] },
   ] },
   { name: 'calendar_group', type: 'expandable', flatten: true, title: 'Calendar', schema: [
@@ -446,6 +447,7 @@ var HABIRD_LABELS = {
   clock_min_confidence: 'Min confidence',
   clock_chime: 'Hourly chime',
   clock_chime_media_player: 'Chime speaker',
+  clock_chime_max_seconds: 'Chime max length',
   clock_chime_quiet_hours: 'Quiet hours',
   calendar: 'Calendar',
   calendar_entities: 'Calendar entities',
@@ -498,6 +500,7 @@ var HABIRD_HELPERS = {
   clock_min_confidence: 'Ignore detections below this confidence when building the hour assignment. 0 keeps them all.',
   clock_chime: "On the hour, cast that hour's bird call to a real HA speaker (needs an analog style, a Xeno-Canto key above, and a media player below). The call is fetched from Xeno-Canto - no local audio files to manage.",
   clock_chime_media_player: 'The HA media_player entity to cast the chime to. Required for chimes to actually play.',
+  clock_chime_max_seconds: "Xeno-Canto recordings can run minutes long; this cuts playback with media_stop after N seconds so the chime stays a brief cue instead of rambling on (or sounding like it's looping on players that repeat the track). 0 = let it play in full.",
   clock_chime_quiet_hours: 'e.g. 22:00-07:00 - no chimes during this range (wraps past midnight).',
   calendar: 'A month grid and/or agenda from your HA calendar entities, refreshed every 5 min. Needs the card’s HA connection.',
   calendar_entities: 'Which calendar.* entities to show. Events from all of them are merged.',
@@ -688,6 +691,7 @@ class HABirdCard extends HTMLElement {
         clockChime: !!c.clock_chime,
         clockChimeQuietHours: c.clock_chime_quiet_hours || '',
         clockChimeMediaPlayer: c.clock_chime_media_player || '',
+        clockChimeMaxSeconds: (c.clock_chime_max_seconds == null ? 5 : +c.clock_chime_max_seconds),
         // Calendar
         calendar: !!c.calendar,
         calendarEntities: c.calendar_entities || [],

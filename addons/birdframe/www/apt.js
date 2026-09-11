@@ -6424,12 +6424,20 @@
       // never on the initial load, never in quiet hours.
       if (WALL.clockChime) {
         var chimeMP = WALL.clockChimeMediaPlayer || '';
+        // Xeno-Canto field recordings run anywhere from a few seconds to
+        // several minutes and HA's play_media has no trim/duration param,
+        // so a chime that's meant to be a brief "on the hour" cue can
+        // otherwise ramble on (or sound like it's looping on players that
+        // repeat the current track). Cut it off with an explicit
+        // media_stop after clockChimeMaxSeconds; 0 disables the cap.
+        var chimeMaxSec = WALL.clockChimeMaxSeconds == null ? 5 : +WALL.clockChimeMaxSeconds;
         var quiet = (function (spec) {
           var m = String(spec || '').match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
           if (!m) return null;
           return { start: (+m[1]) * 60 + (+m[2]), end: (+m[3]) * 60 + (+m[4]) };
         })(WALL.clockChimeQuietHours);
         var lastChimeHour = -1;
+        var chimeStopT = null;
 
         function inQuiet(now) {
           if (!quiet || quiet.start === quiet.end) return false;
@@ -6448,7 +6456,15 @@
             if (!info || !info.url) return;
             haCallService('media_player', 'play_media',
               { media_content_id: info.url, media_content_type: 'music' },
-              { entity_id: chimeMP }).then(function () { _refSaveWorking(sci, info); }).catch(function () {});
+              { entity_id: chimeMP }).then(function () {
+                _refSaveWorking(sci, info);
+                clearTimeout(chimeStopT);
+                if (chimeMaxSec > 0) {
+                  chimeStopT = setTimeout(function () {
+                    haCallService('media_player', 'media_stop', {}, { entity_id: chimeMP }).catch(function () {});
+                  }, chimeMaxSec * 1000);
+                }
+              }).catch(function () {});
           }).catch(function () { /* no recording this hour - stay silent */ });
         }
         chimeHook = function (now) {

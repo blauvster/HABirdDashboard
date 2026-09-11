@@ -1,5 +1,20 @@
 # Changelog
 
+## v1.7.1 — 2026-09-11
+
+### Added
+- **`clock_chime_max_seconds`** (default 5). Xeno-Canto field recordings
+  can run minutes long and HA's `play_media` has no trim/duration option,
+  so a chime could ramble on (or sound like it's looping on players that
+  repeat the current track). This issues an explicit `media_stop` on the
+  chime's `media_player` after N seconds; `0` lets a call play in full.
+
+### Fixed
+- **Dial hub outline**: the 8-direction `text-shadow` halo behind the
+  digital readout had visibly rigid edges at each offset copy that didn't
+  blend into one clean line. Replaced with `-webkit-text-stroke`, which
+  follows the actual letterforms.
+
 ## v1.7.0 — 2026-09-11
 
 ### Added

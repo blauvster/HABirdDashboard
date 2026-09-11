@@ -286,6 +286,8 @@ clock_chime: false           # analog: cast that hour's call to a media_player
 clock_chime_media_player: "" # media_player.* entity to cast the chime to -
                              #   required for chimes to actually play
 clock_chime_quiet_hours: ""  # e.g. "22:00-07:00"
+clock_chime_max_seconds: 5   # cut playback with media_stop after N seconds -
+                             #   Xeno-Canto recordings run long; 0 = full length
 weather: true                # conditions + sunrise/sunset from HA
 weather_entity: ""           # empty = first weather.* entity found
 forecast_days: 0             # 0 = off; N = N-day daily forecast (high/low +
@@ -385,6 +387,10 @@ tap/modal button uses - so it needs `xeno_canto_key` set; there's no local
 audio file convention to maintain, and nothing plays through the browser
 itself (which would otherwise need a tap-to-unlock gesture on every
 dashboard load - a non-starter for an unattended wall display).
+Xeno-Canto field recordings can run minutes long and `play_media` has no
+trim option, so `clock_chime_max_seconds` (default 5) issues an explicit
+`media_stop` after that many seconds - a proper "on the hour" cue instead
+of a rambling recording. Set it to `0` to let a call play in full.
 
 **Calendar** (`calendar: true`): a month grid and/or agenda
 (`calendar_view`) built from your HA calendar entities
