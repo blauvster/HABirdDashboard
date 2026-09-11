@@ -1776,8 +1776,10 @@ body.av-local #dd-items  { display: block; }
 /* Digital time + current conditions, dead-centre in the dial's hub -
    drawn over the hands/hub (later in source order) so it stays legible
    wherever the hands happen to point. No background box - each line
-   instead carries its own paper-coloured outline (an 8-direction
-   text-shadow halo, not a filled box), so the hands read as passing
+   instead carries its own paper-coloured stroke directly on the glyphs
+   (-webkit-text-stroke, a smooth outline that follows the letterforms,
+   rather than a stack of offset shadow copies whose hard-edged corners
+   don't blend into one clean outline), so the hands read as passing
    behind the letterforms themselves rather than being interrupted by a
    stamped disc. */
 .ww-dial-center {
@@ -1789,18 +1791,13 @@ body.av-local #dd-items  { display: block; }
 }
 .ww-dial-time,
 .ww-dial-wx {
-  /* Outline thickness scales with the dial, so it stays a deliberate
-     border at any size rather than a hairline on a big main-widget dial. */
-  --ww-dial-outline: clamp(2px, calc(var(--ww-dial-size, 184px) * 0.018), 6px);
-  text-shadow:
-    var(--ww-dial-outline) 0 0 var(--paper),
-    calc(var(--ww-dial-outline) * -1) 0 0 var(--paper),
-    0 var(--ww-dial-outline) 0 var(--paper),
-    0 calc(var(--ww-dial-outline) * -1) 0 var(--paper),
-    var(--ww-dial-outline) var(--ww-dial-outline) 0 var(--paper),
-    calc(var(--ww-dial-outline) * -1) calc(var(--ww-dial-outline) * -1) 0 var(--paper),
-    var(--ww-dial-outline) calc(var(--ww-dial-outline) * -1) 0 var(--paper),
-    calc(var(--ww-dial-outline) * -1) var(--ww-dial-outline) 0 var(--paper);
+  /* Stroke thickness scales with the dial, so it stays a deliberate
+     border at any size rather than a hairline on a big main-widget dial.
+     paint-order keeps the stroke behind the fill (Chromium/Firefox honor
+     it for text; Safari always paints fill on top of -webkit-text-stroke
+     regardless, so the fallback there is already correct). */
+  -webkit-text-stroke: clamp(2px, calc(var(--ww-dial-size, 184px) * 0.018), 6px) var(--paper);
+  paint-order: stroke fill;
 }
 .ww-dial-time {
   font: 600 clamp(13px, calc(var(--ww-dial-size, 184px) * 0.12), 34px)/1 var(--av-font-display);
