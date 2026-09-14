@@ -73,17 +73,24 @@ setTimeout(() => {
   const doc = window.document;
   const assert = require('assert');
   try {
-    // Collage rendered both species as tiles with static asset srcs
+    // Collage rendered both species as tiles. src now tries the local
+    // Audubon Clock art cache first (data-real-src carries the real,
+    // pose-specific illustration __birdImgErr falls to on a cache miss).
     const tiles = [...doc.querySelectorAll('.gtile img')];
     assert.ok(tiles.length === 2, 'expected 2 collage tiles, got ' + tiles.length);
-    const srcs = tiles.map(t => t.getAttribute('src'));
+    assert.ok(
+      tiles.every(t => t.getAttribute('src').includes('/local/community/habird_cache/art/')),
+      'collage tiles try the cache first: ' + tiles.map(t => t.getAttribute('src')));
+    const realSrcs = tiles.map(t => t.getAttribute('data-real-src'));
     // Anna 0.99 >= 0.96 -> perched (no -2); Raven 0.71 -> flight (-2 exists for corvus-corax)
-    assert.ok(srcs.some(s => s.includes('illustrations/calypte-anna.png')), 'anna perched: ' + srcs);
-    assert.ok(srcs.some(s => s.includes('illustrations/corvus-corax-2.png')), 'raven flying: ' + srcs);
+    assert.ok(realSrcs.some(s => s.includes('illustrations/calypte-anna.png')), 'anna perched: ' + realSrcs);
+    assert.ok(realSrcs.some(s => s.includes('illustrations/corvus-corax-2.png')), 'raven flying: ' + realSrcs);
     // Atlas got cards
     const cards = [...doc.querySelectorAll('.bird-card')];
     assert.ok(cards.length === 2, 'expected 2 atlas cards, got ' + cards.length);
-    assert.ok(cards[0].querySelector('img').getAttribute('src').includes('./assets/illustrations/'), 'atlas img static');
+    const atlasImg = cards[0].querySelector('img');
+    assert.ok(atlasImg.getAttribute('src').includes('/local/community/habird_cache/art/'), 'atlas img tries cache first');
+    assert.ok(atlasImg.getAttribute('data-real-src').includes('./assets/illustrations/'), 'atlas img real-src static');
     // Stats lists populated
     assert.ok(doc.getElementById('statsByPeriod').textContent.includes('all time'), 'stats by period rendered');
     assert.ok(doc.getElementById('statsTopSpec').textContent.includes('Hummingbird'), 'top species rendered');

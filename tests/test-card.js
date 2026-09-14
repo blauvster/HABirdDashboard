@@ -65,9 +65,15 @@ setTimeout(() => {
     // Collage rendered with CDN-based artwork and confidence poses.
     const tiles = [...root.querySelectorAll('.gtile img')];
     assert.strictEqual(tiles.length, 2, 'tiles: ' + tiles.length);
-    const srcs = tiles.map(t => t.getAttribute('src'));
-    assert.ok(srcs.some(s => s.startsWith('https://cdn.jsdelivr.net/gh/adamoberley/HABirdDashboard@HABirdDashboard/avian/assets/illustrations/calypte-anna.png')), 'CDN perched: ' + srcs);
-    assert.ok(srcs.some(s => s.includes('illustrations/corvus-corax-2.png')), 'flight pose: ' + srcs);
+    // src now tries the local Audubon Clock art cache first; data-real-src
+    // carries the real, pose-specific CDN illustration __birdImgErr falls
+    // to on a cache miss.
+    assert.ok(
+      tiles.every(t => t.getAttribute('src').includes('/local/community/habird_cache/art/')),
+      'tiles try the cache first: ' + tiles.map(t => t.getAttribute('src')));
+    const realSrcs = tiles.map(t => t.getAttribute('data-real-src'));
+    assert.ok(realSrcs.some(s => s.startsWith('https://cdn.jsdelivr.net/gh/adamoberley/HABirdDashboard@HABirdDashboard/avian/assets/illustrations/calypte-anna.png')), 'CDN perched: ' + realSrcs);
+    assert.ok(realSrcs.some(s => s.includes('illustrations/corvus-corax-2.png')), 'flight pose: ' + realSrcs);
     // Atlas + stats live too.
     assert.ok(root.querySelectorAll('.bird-card').length === 2, 'atlas cards');
     assert.ok(root.getElementById('statsTopSpec').textContent.includes('Hummingbird'), 'stats render');

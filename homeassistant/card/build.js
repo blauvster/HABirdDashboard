@@ -231,7 +231,7 @@ const wrapper = `
 // you copied the artwork locally (homeassistant/install.sh layout).
 var HABIRD_CDN_ASSETS = 'https://cdn.jsdelivr.net/gh/adamoberley/HABirdDashboard@HABirdDashboard/avian/assets/';
 
-var HABIRD_VERSION = '1.7.1';
+var HABIRD_VERSION = '1.8.0';
 
 var HABIRD_EDITOR_SCHEMA = [
   { name: 'dashboard', type: 'expandable', flatten: true, title: 'Dashboard', expanded: true, schema: [
@@ -329,6 +329,7 @@ var HABIRD_EDITOR_SCHEMA = [
     { name: 'image_base', selector: { text: {} } },
   ] },
   { name: 'audubon', type: 'expandable', flatten: true, title: 'Audubon clock', schema: [
+    { name: 'audubon_clock_device', selector: { device: { integration: 'habird' } } },
     { name: 'clock_style', selector: { select: { mode: 'dropdown', options: [
       { value: 'digital', label: 'Digital (default)' },
       { value: 'analog', label: 'Analog dial only (no digits)' },
@@ -436,6 +437,7 @@ var HABIRD_LABELS = {
   poll_seconds: 'Refresh interval',
   live: 'Live updates',
   visits_sensors: 'Feeder visit sensors',
+  audubon_clock_device: 'BirdNET-Go Audubon Clock device',
   clock_style: 'Clock style',
   clock_placement: 'Clock placement',
   clock_size: 'Dial size',
@@ -490,6 +492,7 @@ var HABIRD_HELPERS = {
   poll_seconds: 'Safety-net refresh. MQTT pushes new detections instantly.',
   live: "Opens a live connection to BirdNET-Go's own detection stream (in addition to the MQTT push above) so new calls refresh the card within a couple seconds. Falls back to the interval above alone if the stream is unavailable (older BirdNET-Go, or Private Mode).",
   visits_sensors: "Optional: a feeder camera's BirdNET-style “... scientific name” sensors (e.g. published by an LLM Vision automation). Their sightings blend in as per-species “visits” next to the audio “calls” - on hover, in the atlas and in the detail view.",
+  audubon_clock_device: "Optional. Bind the dial to a BirdNET-Go Audubon Clock integration device (Settings → Devices & Services) instead of computing the hour→bird assignment in the browser: the card reads that device's position sensors directly, and its own client-side chime (below) turns itself off automatically to avoid chiming twice - the integration owns casting when a device is bound. Blank (default): the card computes and chimes on its own, as before.",
   clock_style: 'Analog swaps the digital block for an Audubon "singing bird clock" dial (a bird illustration at each hour, drawn from that hour’s detections) with no digits anywhere - real Audubon clocks have none. Both keeps a digital time/conditions readout in the dial’s own hub.',
   clock_placement: "Grouped (default) keeps the clock with weather/calendar wherever the Dashboard section's corner puts them - unchanged from before. Main pulls it out into its own dead-centre widget, sized way up, with the flock ringing it; weather/calendar (if on) stay together at their own corner instead of piling into the middle with it.",
   clock_size: "Any CSS size - '220px', '42vmin', '20rem' - overriding the automatic default (184px grouped, scaling up to ~560px when placement is Main). Relative units scale with the viewport/card. Blank = automatic.",
@@ -677,6 +680,9 @@ class HABirdCard extends HTMLElement {
         forecastDays: (c.forecast_days == null ? 0 : +c.forecast_days),
         fahrenheit: !!c.fahrenheit,   // BirdNET-Go fallback only; hass uses HA units
         // Audubon analog clock
+        // Optional: bind to a BirdNET-Go Audubon Clock integration device
+        // instead of computing the assignment/chime client-side.
+        audubonClockDeviceId: c.audubon_clock_device || '',
         clockStyle: c.clock_style || 'digital',
         clockPlacement: c.clock_placement || 'grouped',
         clockSize: c.clock_size || '',

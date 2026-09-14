@@ -263,6 +263,11 @@ xeno_canto_key: ""           # free key from xeno-canto.org/account; enables the
                              #   reference-call feature below (empty = off)
 audio_boost: 24              # recording playback boost in dB, 0-48 (0 = off) - for quiet mics
 clock: true                  # time + date in a corner of the collage
+audubon_clock_device: ""     # optional: bind the dial to a BirdNET-Go Audubon
+                             #   Clock integration device instead of computing
+                             #   the hour->bird assignment (and chime) in the
+                             #   browser - see "BirdNET-Go Audubon Clock
+                             #   integration" below
 clock_style: digital         # digital (default) | analog (Audubon bird-clock
                              #   dial, no digits anywhere) | both (dial +
                              #   digital readout in its hub)
@@ -392,6 +397,19 @@ trim option, so `clock_chime_max_seconds` (default 5) issues an explicit
 `media_stop` after that many seconds - a proper "on the hour" cue instead
 of a rambling recording. Set it to `0` to let a call play in full.
 
+**`audubon_clock_device`** binds the dial to a [BirdNET-Go Audubon Clock
+integration](#birdnet-go-audubon-clock-integration-optional) device
+(pick it from Settings → Devices & Services in the visual editor) instead
+of computing the hour→bird assignment - and chiming - in the browser: the
+card reads that device's `sensor.*_position_N` entities directly, so every
+client showing the dial displays the exact same assignment the integration
+already computed, and the card's own `clock_chime` turns itself off
+automatically the moment a device is bound (the integration casts the
+chime server-side instead - no double-chiming to worry about). Blank
+(default): the card computes and chimes on its own, exactly as before -
+this option is entirely opt-in and the card works standalone with no
+integration installed.
+
 **Calendar** (`calendar: true`): a month grid and/or agenda
 (`calendar_view`) built from your HA calendar entities
 (`calendar_entities`), refreshed every 5 minutes. Today is highlighted,
@@ -425,7 +443,16 @@ hidden and `tap_action: call`/`both` simply open the details.
 (jsDelivr) - only birds you've actually heard are ever fetched, one PNG
 each, cached by the browser. For a fully offline install, copy
 `avian/assets/` to `/config/www/habird-art/` and set
-`image_base: /local/habird-art/`.
+`image_base: /local/habird-art/`. If the [BirdNET-Go Audubon Clock
+integration](#birdnet-go-audubon-clock-integration-optional) is installed,
+every bird image the card shows - collage, atlas, and the clock dial's rim
+- first checks that integration's local art cache
+(`/local/community/habird_cache/art/`) before falling back to the CDN/
+`image_base`; a miss (not yet cached, or the integration isn't installed)
+is invisible - it just falls through to the normal fetch, same as always.
+This needs no configuration and works independently of `audubon_clock_device`
+above - any species the integration has ever cached benefits every client,
+whether or not that client's dial is bound to the device.
 
 ### Missing artwork for your area?
 
@@ -632,6 +659,94 @@ repeat visit is silently lost.
 
 ---
 
+## BirdNET-Go Audubon Clock integration (optional)
+
+Alongside the card, this repo also ships an optional Home Assistant
+**integration** (`custom_components/habird`, shown in HA as **"BirdNET-Go
+Audubon Clock"**) that runs the card's Audubon-clock **chime feature
+entirely server-side, with no card or dashboard required at all**. Today the
+card's chime is a client-side timer (`clock_chime` in [Card
+options](#card-options)): it only fires while a dashboard tab showing the
+analog clock is open, and its hour→bird assignment lives in that one
+browser's local storage. The integration moves both pieces into Home
+Assistant itself and exposes them as plain entities - it's a standalone
+Audubon clock, not a bolt-on to the card:
+
+- **`sensor.<name>_position_1` … `_position_12`** (or `_24` in 24-hour
+  mode) - one per clock position, state = the bird assigned to that hour,
+  with `scientific_name`, `source`
+  (`pinned`/`history`/`borrowed`/`fallback`/`reused`), `hours` (which real
+  hour(s)-of-day the position covers), `art_url` (that species'
+  illustration), `audio_url` (the exact Xeno-Canto recording that hour will
+  play), and its licensing attribution (`audio_recordist`/`audio_license`/
+  `audio_page`/`audio_type`/`audio_quality` - required by Xeno-Canto's CC
+  license) as attributes. This is the whole day's schedule, visible up
+  front - not just "whichever hour it is right now."
+- **`switch.<name>_chime_enabled`** - turns the automatic on-the-hour cast
+  on/off without touching any other setting.
+- **`switch.<name>_play_now`** - a manual trigger: turn it on to cast the
+  *current* hour's call immediately, turn it off to stop it. Its own state
+  tracks whether a chime is in progress, so it doubles as "is it chiming
+  right now?" - handy for testing a media player without waiting for the
+  clock to tick over.
+
+**Both the chime audio and the artwork are cached locally** under
+`/config/www/community/habird_cache/` (`audio/` and `art/`, grouped under
+`www/community/` the way HACS itself lands frontend resources) the first
+time each is
+looked up, and served back from there afterward - a later recompute (or
+the next time that species comes up) checks the cache before touching
+Xeno-Canto or the artwork CDN again. `art_url`/`audio_url` point at the
+cached copy under **HA's external URL if you have one configured
+(Settings → System → Network), falling back to the internal URL** -
+external is preferred so the link keeps working for whatever's actually
+fetching it (a cloud-connected media_player, a device on a different
+network), not just something on the same LAN as Home Assistant. If caching
+fails for any reason (no HA base URL configured at all yet, a download
+error, a full disk), they fall back to the original remote URL rather than
+coming up empty. Audio is cached per Xeno-Canto recording id (so a
+different resolved recording later gets its own file, never stale audio
+under an old name);
+artwork is cached per species and, once fetched, never needs re-fetching.
+
+**Install:** copy `custom_components/habird/` into your `/config/`
+directory (HACS support for a second "Integration" category on this same
+repo is unverified as of this writing - manual copy, or a Samba/Terminal
+& SSH app, works today), restart Home Assistant, then **Settings → Devices
+& Services → Add Integration → BirdNET-Go Audubon Clock**. The setup step
+asks for your BirdNET-Go URL (same one you'd put in the card's
+`birdnet_url`) and an optional API token (Private Mode) - that's enough to
+populate the position sensors' bird names. Actual chiming needs the
+integration's **Configure**: a **Xeno-Canto API key** and at least one
+**chime media player** - pick more than one and the chime casts to all of
+them at once. Quiet hours, the cutoff length,
+12/24-hour clock mode, the assignment window, the reassignment cadence, and
+hour pins are all there too, mirroring the card's
+`clock_chime_*`/`clock_hours`/`clock_window_days`/`clock_reassign`/
+`hour_birds` options.
+
+**Bind the card's own dial to it with `audubon_clock_device`** (see
+[Card options](#card-options) and "Audubon bird clock" above): once set,
+the card reads that device's position sensors directly instead of
+computing its own assignment, and its `clock_chime` turns itself off
+automatically - the integration casts server-side instead, so there's no
+double-chiming to manage by hand. Without `audubon_clock_device` set, the
+card's `clock_chime` (if you also turn it on) still runs its own
+independent client-side schedule - **turn one of the two off** in that
+case, or you'll hear the hour chime twice.
+
+This is deliberately scoped to the clock: the integration does **not**
+replace the card's own BirdNET-Go/Xeno-Canto calls for the collage, atlas,
+or detail-modal data (`data_source: api`/`ha` and the card's own
+`xeno_canto_key` keep working exactly as before, whether or not you install
+this) - only the Audubon-clock assignment and chime, and (passively, for
+any card, bound or not) the local art cache described above. Centralizing
+*all* of the card's data behind an integration - so N dashboard clients
+read from one Home Assistant device instead of each calling BirdNET-Go
+independently - is a natural next step, not built yet.
+
+---
+
 ## Wall-mounted displays
 
 Turn on **clock** and **weather** in the card settings and put the card on
@@ -812,6 +927,9 @@ avian/
 └── scripts/         # generate -> cutout -> masks pipeline (Gemini + BiRefNet)
 addons/
 └── birdframe/       # optional app: push the collage to a Samsung Frame TV
+custom_components/
+└── habird/          # optional integration: BirdNET-Go Audubon Clock
+                      #   (see "BirdNET-Go Audubon Clock integration" above)
 docs/                # screenshot
 hacs.json            # HACS metadata (frontend card)
 repository.yaml      # Apps-store metadata (makes this repo an app repo too)

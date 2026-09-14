@@ -83,9 +83,11 @@ setTimeout(() => {
     const raven = tiles.find(t => t.dataset.sci === 'Corvus corax');
     assert.ok(anna && anna.title.includes('3 calls'), 'anna count from history: ' + (anna && anna.title));
     assert.ok(raven && raven.title.includes('1 call'), 'raven count: ' + (raven && raven.title));
-    // Poses: anna 0.99 -> perched, raven 0.71 -> flight.
-    assert.ok(anna.querySelector('img').src.includes('calypte-anna.png'), 'anna perched');
-    assert.ok(raven.querySelector('img').src.includes('corvus-corax-2.png'), 'raven flying');
+    // Poses: anna 0.99 -> perched, raven 0.71 -> flight. src now tries the
+    // local Audubon Clock art cache first; data-real-src carries the
+    // pose-specific illustration that actually encodes the choice.
+    assert.ok(anna.querySelector('img').getAttribute('data-real-src').includes('calypte-anna.png'), 'anna perched');
+    assert.ok(raven.querySelector('img').getAttribute('data-real-src').includes('corvus-corax-2.png'), 'raven flying');
     // Common names came from the Last Species sensor.
     assert.strictEqual(anna.getAttribute('aria-label'), "Anna's Hummingbird", 'common name joined');
     // Stats side panel built from the same events.

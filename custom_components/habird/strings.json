@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to BirdNET-Go",
+        "description": "Set up a server-side Audubon clock: hour→bird assignment and the on-the-hour chime run inside Home Assistant, independent of the Bird Card dashboard - the card isn't required.",
+        "data": {
+          "url": "BirdNET-Go URL",
+          "verify_ssl": "Verify SSL certificate",
+          "api_token": "API token (only needed if BirdNET-Go's Private Mode is enabled)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach BirdNET-Go at this URL. Check the address and that BirdNET-Go is running."
+    },
+    "abort": {
+      "already_configured": "This BirdNET-Go server is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Audubon clock options",
+        "description": "Chimes are off unless both a Xeno-Canto key and at least one chime media player are set below (the 'Chime enabled' switch can still pause them without clearing these). If you also enable clock_chime in the Bird Card, turn it off there to avoid chiming twice.",
+        "data": {
+          "xeno_canto_key": "Xeno-Canto API key (enables chimes)",
+          "chime_media_players": "Chime media players (plays on all of them at once)",
+          "chime_quiet_hours": "Quiet hours (HH:MM-HH:MM)",
+          "chime_max_seconds": "Cut chime playback after (seconds, 0 = full length)",
+          "clock_hours": "Clock hours",
+          "clock_window_days": "Assignment window (days)",
+          "clock_reassign": "Reassignment cadence",
+          "hour_pins": "Pinned hour -> species, as a JSON object (e.g. pin hour 7 to Turdus migratorius)"
+        }
+      }
+    },
+    "error": {
+      "invalid_pins": "Hour pins must be valid JSON mapping a clock position to a scientific name."
+    }
+  }
+}

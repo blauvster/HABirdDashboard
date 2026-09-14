@@ -1,5 +1,46 @@
 # Changelog
 
+## v1.8.0 — 2026-09-14
+
+### Added
+- **`custom_components/habird`: "BirdNET-Go Audubon Clock"**, an optional
+  Home Assistant integration that runs the card's Audubon-clock chime
+  feature entirely server-side, with **no card or dashboard required at
+  all** (`Settings → Devices & Services → Add Integration → BirdNET-Go
+  Audubon Clock`). Exposes one sensor per clock position - state is the
+  assigned bird, with its scientific name/source, its cached artwork
+  (`art_url`), and the exact Xeno-Canto recording that hour will play
+  (`audio_url` plus recordist/license/quality attribution) as attributes -
+  a `switch` to enable/disable the automatic on-the-hour cast, and a
+  `switch` to trigger/stop the current hour's call manually. The hour→bird
+  assignment and the `media_player.play_media` cast now run inside Home
+  Assistant itself, so chimes keep firing even with no dashboard open
+  anywhere (previously a client-side `setTimeout` loop tied to the card's
+  own tab, see `apt.js`'s `initAnalogDial`). See the README's new "BirdNET-Go
+  Audubon Clock integration (optional)" section for how the card and the
+  integration relate.
+- The integration **caches chime audio and artwork locally** under
+  `/config/www/community/habird_cache/` instead of re-fetching from Xeno-Canto/the
+  artwork CDN on every recompute - a cache hit is served straight from
+  there, preferring Home Assistant's external URL when one is configured
+  (falling back to the internal URL) so the link keeps working for
+  whatever's actually fetching it, not just something on the same LAN. Any
+  caching failure falls back to the original remote URL rather than
+  breaking playback or the sensor.
+- **`audubon_clock_device`** (new card option): binds the analog dial to a
+  BirdNET-Go Audubon Clock integration device instead of computing the
+  hour→bird assignment in the browser - the card reads that device's
+  position sensors directly, and its own client-side `clock_chime` turns
+  itself off automatically once a device is bound, so there's no
+  double-chiming to manage by hand. Blank (default): the card computes and
+  chimes on its own, exactly as before.
+- **The card now checks the integration's local art cache before the CDN**
+  for every bird image it shows (collage, atlas, and the clock dial) -
+  needs no configuration and works independently of `audubon_clock_device`;
+  any species the integration has ever cached benefits every client. A
+  cache miss (not cached yet, or the integration isn't installed) falls
+  straight through to the normal CDN/`image_base` fetch, same as before.
+
 ## v1.7.1 — 2026-09-11
 
 ### Added

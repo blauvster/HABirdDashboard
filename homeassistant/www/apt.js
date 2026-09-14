@@ -1550,6 +1550,19 @@
   function cutoutSrc(sci) {
     return './assets/cutouts/' + slugify(sci) + '.png';
   }
+  // A locally-cached copy of this species' artwork, if the BirdNET-Go
+  // Audubon Clock integration (custom_components/habird) has already
+  // fetched it - see that integration's cache.py, which mirrors the same
+  // CDN this card falls back to by default. Always same-origin (this page
+  // only ever runs inside Home Assistant's own frontend), so a bare
+  // absolute path resolves correctly with no base-URL plumbing. Perched
+  // pose (or its photo-cutout fallback) only - the integration never
+  // caches the flight pose - so this is tried first regardless of the
+  // pose actually wanted; a miss (never cached, or a flight pose was
+  // wanted) falls through to the real illustration via __birdImgErr below.
+  function cachedArtSrc(sci) {
+    return '/local/community/habird_cache/art/' + slugify(sci) + '.png';
+  }
   // Does this species have ANY bundled art at all (illustration or photo
   // cutout - the same two tiers __birdImgErr falls through below)? Used to
   // keep the Audubon clock's rim thumbnails from ever landing on a species
@@ -1571,6 +1584,16 @@
     return (_artProbeCache[sci] = p);
   }
   window.__birdImgErr = function (img) {
+    // Optional first rung: a locally-cached copy of the REAL illustration
+    // this element would otherwise load (see cachedArtSrc/data-real-src
+    // above). Callers that don't set data-real-src (most call sites don't
+    // opt in) fall straight through to the unchanged ladder below, exactly
+    // as before this rung existed.
+    if (!img.hasAttribute('data-cache-tried')) {
+      img.setAttribute('data-cache-tried', '1');
+      var real = img.getAttribute('data-real-src');
+      if (real) { img.src = real; return; }
+    }
     var slug = img.getAttribute('data-slug');
     var step = +(img.getAttribute('data-fb') || 0);
     img.setAttribute('data-fb', String(step + 1));
@@ -1594,9 +1617,13 @@
   // Attribute string for collage/atlas <img> tags built via innerHTML.
   // pose 1 starts at fallback step 1 (its first candidate IS the perched
   // illustration, so a failure should go straight to the photo cutout).
+  // data-real-src is the illustration __birdImgErr falls to once the
+  // cache-first attempt (the actual initial src at these call sites) misses.
   function birdImgAttrs(sci, pose) {
     return ' data-slug="' + slugify(sci) + '" data-sci="' + esc(sci) +
-      '" data-fb="' + (pose === 2 ? 0 : 1) + '" onerror="__birdImgErr(this)"';
+      '" data-fb="' + (pose === 2 ? 0 : 1) +
+      '" data-real-src="' + esc(sketchSrc(sci, pose)) +
+      '" onerror="__birdImgErr(this)"';
   }
   // ======================= end BirdNET-Go adapter ==========================
 
@@ -2852,14 +2879,20 @@
       // browsers, which is exactly the flash this avoids.
       var imgEl = btn.querySelector('img');
       var src = assetSrc(s.sci, r.pose) + '?v=' + IMG_VERSION;
-      if (imgEl.getAttribute('src') !== src) {
+      // Identity key is data-real-src, not the live src attribute - the
+      // actual src now starts at the local cache (see cachedArtSrc) and
+      // can change again on a cache-miss error without that counting as
+      // "the bird/pose changed" and re-triggering this whole reset.
+      if (imgEl.getAttribute('data-real-src') !== src) {
         imgEl.setAttribute('alt', s.com);
         imgEl.setAttribute('data-slug', slugify(s.sci));
         imgEl.setAttribute('data-sci', s.sci);
         imgEl.setAttribute('data-fb', r.pose === 2 ? '0' : '1');
+        imgEl.removeAttribute('data-cache-tried');
+        imgEl.setAttribute('data-real-src', src);
         imgEl.style.visibility = '';
         imgEl.onerror = function () { window.__birdImgErr(imgEl); };
-        imgEl.setAttribute('src', src);
+        imgEl.setAttribute('src', cachedArtSrc(s.sci));
       }
       // Ring flow: rotate the IMG only (never the tile - the tile box stays
       // axis-aligned, so silhouette packing, alpha-mask hit-testing and the
@@ -3639,7 +3672,10 @@
       var win = winBySci[s.sci] || 0;
       var firstMs = Date.parse((s.first_seen || '').replace(' ', 'T'));
       var isLifer = !isAllWindow && !isNaN(firstMs) && firstMs >= windowStartMs;
-      var sketchSrc = assetSrc(s.sci, 1) + '?v=' + SKETCH_VERSION;
+      // Try the local Audubon Clock cache first (see cachedArtSrc); the
+      // real illustration (data-real-src, via birdImgAttrs below) is the
+      // __birdImgErr fallback on a cache miss.
+      var imgSrc = cachedArtSrc(s.sci);
       // The "all time" window makes the windowed count identical to the
       // all-time count - collapse to a single stat rather than print the
       // same number twice. Otherwise label the count with its span.
@@ -3659,7 +3695,7 @@
         +   (isLifer ? '<span class="lifer-badge" title="' + esc(tt('atlas.newTitle')) + '">' + esc(tt('atlas.new')) + '</span>' : '')
         +   '<div class="stat">' + statRows + '</div>'
         +   '<div class="img-wrap">'
-        +     '<img loading="lazy" decoding="async" src="' + sketchSrc + '" alt="' + esc(s.com) + '"' + birdImgAttrs(s.sci, 1) + '>'
+        +     '<img loading="lazy" decoding="async" src="' + esc(imgSrc) + '" alt="' + esc(s.com) + '"' + birdImgAttrs(s.sci, 1) + '>'
         +   '</div>'
         +   '<h3>' + esc(s.com) + '</h3>'
         +   '<div class="sci">' + esc(s.sci) + '</div>'
@@ -6325,11 +6361,15 @@
             img.setAttribute('data-sci', a.species);
             img.setAttribute('data-slug', slugify(a.species));
             img.setAttribute('data-fb', '1');
+            img.setAttribute('data-real-src', sketchSrc(a.species, 1));
             img.setAttribute('loading', 'lazy');
             img.setAttribute('decoding', 'async');
             img.alt = birdLabel(a.species);
             img.onerror = function () { window.__birdImgErr(this); };
-            img.src = sketchSrc(a.species, 1);
+            // Most likely to be a cache hit of all the card's art: this is
+            // exactly the species the habird integration's own chime
+            // feature (if installed) already resolved and cached.
+            img.src = cachedArtSrc(a.species);
             img.style.left = (50 + Math.sin(ang) * 39) + '%';
             img.style.top = (50 - Math.cos(ang) * 39) + '%';
             birdsEl.appendChild(img);
@@ -6349,7 +6389,50 @@
       });
       birdsEl.addEventListener('mouseout', function () { renderActive(); });
 
+      // If bound to a BirdNET-Go Audubon Clock integration device
+      // (WALL.audubonClockDeviceId), read its hour->bird assignment
+      // straight from that device's sensor.*_position_N entities instead
+      // of computing one here - the integration becomes the single source
+      // of truth (and already runs the chime server-side; see the
+      // clockChime gate below, which turns the card's own chime off
+      // whenever a device is bound). Needs hass.entities (the entity
+      // registry HA exposes to cards); older frontends without it just
+      // find nothing and the card computes locally, same as no device
+      // being bound at all.
+      function habirdDeviceAssignment() {
+        var deviceId = WALL.audubonClockDeviceId;
+        var hass = AV_CFG.__getHass && AV_CFG.__getHass();
+        if (!deviceId || !hass || !hass.entities || !hass.states) return null;
+        var out = {}, found = false;
+        Object.keys(hass.entities).forEach(function (entityId) {
+          var reg = hass.entities[entityId];
+          if (!reg || reg.device_id !== deviceId) return;
+          var m = entityId.match(/^sensor\..*_position_(\d+)$/);
+          if (!m) return;
+          var st = hass.states[entityId];
+          var attrs = (st && st.attributes) || {};
+          if (!attrs.scientific_name) return;
+          found = true;
+          out[+m[1]] = {
+            species: attrs.scientific_name,
+            source: attrs.source || 'history',
+            dim: !!attrs.dim,
+            score: 0,
+          };
+        });
+        return found ? out : null;
+      }
+
       function recompute() {
+        var bound = habirdDeviceAssignment();
+        if (bound) {
+          // Device-bound: no local BirdNET-Go/Xeno-Canto calls, no
+          // localStorage persistence - the integration already owns and
+          // persists this.
+          assignment = bound;
+          renderRim();
+          return Promise.resolve();
+        }
         var pool = ((DATA.recent && DATA.recent.species) || []).map(function (r) { return r.sci; });
         return clockHourMatrix({
           windowDays: +WALL.clockWindowDays || 30,
@@ -6421,8 +6504,11 @@
       // dropped - it needed a tap-to-unlock gesture on every dashboard
       // load, which is a non-starter for an unattended wall display.
       // Fires exactly once per hour change (deduped on lastChimeHour),
-      // never on the initial load, never in quiet hours.
-      if (WALL.clockChime) {
+      // never on the initial load, never in quiet hours. Skipped entirely
+      // when bound to a BirdNET-Go Audubon Clock device (above) - that
+      // integration already casts the chime server-side, so this stays
+      // off unconditionally to avoid the hour chiming twice.
+      if (WALL.clockChime && !WALL.audubonClockDeviceId) {
         var chimeMP = WALL.clockChimeMediaPlayer || '';
         // Xeno-Canto field recordings run anywhere from a few seconds to
         // several minutes and HA's play_media has no trim/duration param,

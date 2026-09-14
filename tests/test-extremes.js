@@ -41,14 +41,18 @@ const cardFly = boot(1.01);
 const cardSit = boot(0);
 setTimeout(() => {
   try {
+    // src now tries the local Audubon Clock art cache first (never has a
+    // -2/flight variant); data-real-src carries the pose-specific CDN
+    // illustration __birdImgErr falls to on a cache miss, so that's what
+    // actually encodes the sit/fly pose choice now.
     const rF = cardFly.shadowRoot;
     const annaF = rF.querySelector('.gtile[data-sci="Calypte anna"] img');
     const ravenF = rF.querySelector('.gtile[data-sci="Corvus corax"] img');
-    assert.ok(annaF.src.includes('calypte-anna-2.png'), '1.01: anna (0.99) flies');
-    assert.ok(ravenF.src.includes('corvus-corax-2.png'), '1.01: raven (0.55) flies');
+    assert.ok(annaF.getAttribute('data-real-src').includes('calypte-anna-2.png'), '1.01: anna (0.99) flies');
+    assert.ok(ravenF.getAttribute('data-real-src').includes('corvus-corax-2.png'), '1.01: raven (0.55) flies');
     const rS = cardSit.shadowRoot;
-    assert.ok(rS.querySelector('.gtile[data-sci="Calypte anna"] img').src.includes('calypte-anna.png'), '0: anna perches');
-    assert.ok(rS.querySelector('.gtile[data-sci="Corvus corax"] img').src.includes('corvus-corax.png'), '0: raven (0.55) perches');
+    assert.ok(rS.querySelector('.gtile[data-sci="Calypte anna"] img').getAttribute('data-real-src').includes('calypte-anna.png'), '0: anna perches');
+    assert.ok(rS.querySelector('.gtile[data-sci="Corvus corax"] img').getAttribute('data-real-src').includes('corvus-corax.png'), '0: raven (0.55) perches');
     console.log('EXTREMES TEST PASSED (1.01 all flying, 0 all perched)');
     process.exit(0);
   } catch (e) { console.error('FAIL:', e.message); process.exit(1); }
